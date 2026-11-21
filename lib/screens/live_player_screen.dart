@@ -11,6 +11,10 @@ import '../main.dart';
 import '../models/media_item.dart';
 import '../services/storage_service.dart';
 
+const String _kAllCountries = 'Tümü';
+const String _kAllChannels = 'Tüm Kanallar';
+const double _kBarHeight = 68;
+
 class LivePlayerScreen extends StatefulWidget {
   const LivePlayerScreen({
     super.key,
@@ -31,12 +35,20 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   final FocusNode _rootFocus = FocusNode(debugLabel: 'live-root');
 
   MediaItem? _current;
+  bool _barOpen = false;
   bool _panelOpen = false;
-  int _level = 1;
-  String? _country;
+  int _level = 2;
+  String _country = _kAllCountries;
   String? _subCategory;
   bool _osdVisible = false;
   Timer? _osdTimer;
+
+  List<String> _countryList = <String>[];
+  final Map<String, List<MediaItem>> _byCountry = <String, List<MediaItem>>{};
+  final Map<String, FocusNode> _chipNodes = <String, FocusNode>{};
+  List<String> _subList = <String>[];
+  final Map<String, int> _subCounts = <String, int>{};
+  List<MediaItem> _channelList = <MediaItem>[];
 
   @override
   void initState() {
@@ -53,6 +65,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       _current = initial;
       _player.open(Media(initial.url));
     }
+    _buildIndex();
+    _refreshSubs();
     StorageService.instance.changes.addListener(_onStorageChanged);
   }
 
@@ -61,6 +75,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     StorageService.instance.changes.removeListener(_onStorageChanged);
     _osdTimer?.cancel();
     _rootFocus.dispose();
+    for (final node in _chipNodes.values) {
+      node.dispose();
+    }
     _player.dispose();
     super.dispose();
   }
@@ -80,49 +97,75 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     return item.subCategory.trim().isEmpty ? 'Genel' : item.subCategory.trim();
   }
 
-  List<String> _countries() {
-    final values = <String>{};
+  void _buildIndex() {
+    _byCountry.clear();
     for (final item in _channels) {
-      values.add(_countryOf(item));
+      _byCountry.putIfAbsent(_countryOf(item), () => <MediaItem>[]).add(item);
     }
-    final list = values.toList()
+    const preferred = <String>[
+      'Türkiye',
+      'Almanya',
+      'İngiltere',
+      'ABD',
+      'Fransa',
+      'Hollanda',
+    ];
+    final list = <String>[_kAllCountries];
+    for (final name in preferred) {
+      if (_byCountry.containsKey(name)) list.add(name);
+    }
+    final others = _byCountry.keys
+        .where((name) => name != 'Diğer' && !preferred.contains(name))
+        .toList()
+      ..sort((a, b) {
+        final diff = _byCountry[b]!.length.compareTo(_byCountry[a]!.length);
+        if (diff != 0) return diff;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    list.addAll(others);
+    if (_byCountry.containsKey('Diğer')) list.add('Diğer');
+    _countryList = list;
+    for (final name in list) {
+      _chipNodes[name] = FocusNode(debugLabel: 'chip-$name');
+    }
+  }
+
+  List<MediaItem> _itemsOfCountry(String country) {
+    if (country == _kAllCountries) return _channels;
+    return _byCountry[country] ?? const <MediaItem>[];
+  }
+
+  int _countryCount(String country) => _itemsOfCountry(country).length;
+
+  void _refreshSubs() {
+    _subCounts.clear();
+    for (final item in _itemsOfCountry(_country)) {
+      final sub = _subOf(item);
+      _subCounts[sub] = (_subCounts[sub] ?? 0) + 1;
+    }
+    _subList = _subCounts.keys.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return list;
   }
 
-  int _countryCount(String country) {
-    var count = 0;
-    for (final item in _channels) {
-      if (_countryOf(item) == country) count++;
-    }
-    return count;
+  void _selectCountry(String country) {
+    setState(() {
+      _country = country;
+      _subCategory = null;
+      _refreshSubs();
+      _level = 2;
+      _panelOpen = true;
+    });
   }
 
-  List<String> _subCategories(String country) {
-    final values = <String>{};
-    for (final item in _channels) {
-      if (_countryOf(item) != country) continue;
-      values.add(_subOf(item));
-    }
-    final list = values.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return list;
-  }
-
-  int _subCount(String country, String sub) {
-    var count = 0;
-    for (final item in _channels) {
-      if (_countryOf(item) != country) continue;
-      if (_subOf(item) != sub) continue;
-      count++;
-    }
-    return count;
-  }
-
-  List<MediaItem> _channelsFor(String country, String sub) {
-    return _channels
-        .where((item) => _countryOf(item) == country && _subOf(item) == sub)
-        .toList();
+  void _selectSub(String sub) {
+    final items = _itemsOfCountry(_country);
+    setState(() {
+      _subCategory = sub;
+      _channelList = sub == _kAllChannels
+          ? items
+          : items.where((item) => _subOf(item) == sub).toList();
+      _level = 3;
+    });
   }
 
   void _playChannel(MediaItem item) {
@@ -158,98 +201,95 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _playChannel(channels[next]);
   }
 
-  void _openPanel() {
-    if (_panelOpen) return;
-    setState(() {
-      _panelOpen = true;
-      _level = 1;
-      _country = null;
-      _subCategory = null;
+  void _focusChip() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final node = _chipNodes[_country] ?? _chipNodes[_kAllCountries];
+      node?.requestFocus();
     });
   }
 
-  void _closePanel() {
-    if (!_panelOpen) return;
+  void _openBar() {
+    if (_barOpen) return;
     setState(() {
+      _barOpen = true;
+    });
+    _focusChip();
+  }
+
+  void _closeAll() {
+    setState(() {
+      _barOpen = false;
       _panelOpen = false;
     });
     _rootFocus.requestFocus();
   }
 
-  void _togglePanel() {
-    if (_panelOpen) {
-      _closePanel();
+  void _toggleBar() {
+    if (_barOpen) {
+      _closeAll();
     } else {
-      _openPanel();
+      _openBar();
     }
+  }
+
+  bool _back() {
+    if (_panelOpen) {
+      if (_level == 3) {
+        setState(() {
+          _level = 2;
+          _subCategory = null;
+        });
+      } else {
+        setState(() {
+          _panelOpen = false;
+        });
+        _focusChip();
+      }
+      return true;
+    }
+    if (_barOpen) {
+      _closeAll();
+      return true;
+    }
+    return false;
   }
 
   void _panelBack() {
-    if (!_panelOpen) return;
-    if (_level == 3) {
-      setState(() {
-        _level = 2;
-        _subCategory = null;
-      });
-      return;
-    }
-    if (_level == 2) {
-      setState(() {
-        _level = 1;
-        _country = null;
-      });
-      return;
-    }
-    _closePanel();
+    _back();
   }
 
   Future<bool> _handleBack() async {
-    if (_panelOpen) {
-      _panelBack();
-      return false;
-    }
-    return true;
+    return !_back();
   }
 
   KeyEventResult _handleRootKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape ||
+        key == LogicalKeyboardKey.goBack ||
+        key == LogicalKeyboardKey.browserBack) {
+      if (!_back()) {
+        Navigator.of(context).maybePop();
+      }
+      return KeyEventResult.handled;
+    }
+    if (_barOpen) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowLeft ||
         key == LogicalKeyboardKey.select ||
         key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.gameButtonA) {
-      if (!_panelOpen) {
-        _openPanel();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    }
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      if (_panelOpen) {
-        _panelBack();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
+      _openBar();
+      return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp) {
-      if (_panelOpen) return KeyEventResult.ignored;
       _stepChannel(-1);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown) {
-      if (_panelOpen) return KeyEventResult.ignored;
       _stepChannel(1);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.browserBack) {
-      if (_panelOpen) {
-        _panelBack();
-        return KeyEventResult.handled;
-      }
-      Navigator.of(context).maybePop();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -313,7 +353,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: _togglePanel,
+                      onTap: _toggleBar,
                       child: const SizedBox.expand(),
                     ),
                   ),
@@ -328,12 +368,24 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                     duration: const Duration(milliseconds: 260),
                     curve: Curves.easeOutCubic,
                     top: 0,
-                    bottom: 0,
+                    bottom: _kBarHeight,
                     width: panelWidth,
                     right: _panelOpen ? 0 : -panelWidth,
                     child: ExcludeFocus(
                       excluding: !_panelOpen,
                       child: _buildPanel(panelWidth),
+                    ),
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    left: 0,
+                    right: 0,
+                    height: _kBarHeight,
+                    bottom: _barOpen ? 0 : -_kBarHeight,
+                    child: ExcludeFocus(
+                      excluding: !_barOpen,
+                      child: _buildCountryBar(),
                     ),
                   ),
                 ],
@@ -449,88 +501,66 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   }
 
   String _panelTitle() {
-    if (_level == 1) return 'Ülkeler';
-    if (_level == 2) return _country ?? 'Kategoriler';
-    final country = _country ?? '';
-    final sub = _subCategory ?? '';
-    return '$country · $sub';
+    if (_level == 2) return _country;
+    return '$_country · ${_subCategory ?? ''}';
+  }
+
+  Widget _buildCountryBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.82),
+        border: const Border(top: BorderSide(color: kNeonBorder)),
+      ),
+      child: FocusTraversalGroup(
+        policy: ReadingOrderTraversalPolicy(),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: <Widget>[
+              for (final name in _countryList)
+                _CountryChip(
+                  key: ValueKey<String>('chip-$name'),
+                  node: _chipNodes[name]!,
+                  label: name,
+                  count: _countryCount(name),
+                  selected: name == _country,
+                  onTap: () => _selectCountry(name),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildLevel() {
-    if (_level == 1) {
-      final countries = _countries();
-      if (countries.isEmpty) {
-        return const _PanelEmpty(message: 'Ülke bulunamadı.');
-      }
-      return ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: countries.length,
-        itemBuilder: (context, index) {
-          final country = countries[index];
-          return _PanelRow(
-            key: ValueKey<String>('country-$country'),
-            title: country,
-            subtitle: '${_countryCount(country)} kanal',
-            leading: const Icon(
-              Icons.public_rounded,
-              size: 18,
-              color: Color(0xFF9A9AAB),
-            ),
-            autofocus: _panelOpen && index == 0,
-            onTap: () {
-              setState(() {
-                _country = country;
-                _level = 2;
-              });
-            },
-            onBack: _panelBack,
-          );
-        },
-      );
-    }
-
     if (_level == 2) {
-      final country = _country;
-      if (country == null) {
-        return const _PanelEmpty(message: 'Ülke seçilmedi.');
-      }
-      final subs = _subCategories(country);
-      if (subs.isEmpty) {
-        return const _PanelEmpty(message: 'Kategori bulunamadı.');
-      }
+      final total = _itemsOfCountry(_country).length;
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: subs.length,
+        itemCount: _subList.length + 1,
         itemBuilder: (context, index) {
-          final sub = subs[index];
+          final sub = index == 0 ? _kAllChannels : _subList[index - 1];
+          final count = index == 0 ? total : (_subCounts[sub] ?? 0);
           return _PanelRow(
-            key: ValueKey<String>('sub-$country-$sub'),
+            key: ValueKey<String>('sub-$_country-$sub'),
             title: sub,
-            subtitle: '${_subCount(country, sub)} kanal',
-            leading: const Icon(
-              Icons.category_rounded,
+            subtitle: '$count kanal',
+            leading: Icon(
+              index == 0 ? Icons.apps_rounded : Icons.category_rounded,
               size: 18,
-              color: Color(0xFF9A9AAB),
+              color: const Color(0xFF9A9AAB),
             ),
             autofocus: _panelOpen && index == 0,
-            onTap: () {
-              setState(() {
-                _subCategory = sub;
-                _level = 3;
-              });
-            },
+            onTap: () => _selectSub(sub),
             onBack: _panelBack,
           );
         },
       );
     }
 
-    final country = _country;
-    final sub = _subCategory;
-    if (country == null || sub == null) {
-      return const _PanelEmpty(message: 'Kategori seçilmedi.');
-    }
-    final channels = _channelsFor(country, sub);
+    final channels = _channelList;
     if (channels.isEmpty) {
       return const _PanelEmpty(message: 'Kanal bulunamadı.');
     }
@@ -542,7 +572,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         final playing = _current != null && _current!.id == channel.id;
         final favorite = StorageService.instance.isFavorite(channel);
         return _PanelRow(
-          key: ValueKey<String>('channel-${channel.id}'),
+          key: ValueKey<String>('channel-${channel.id}-$index'),
           title: channel.name,
           subtitle: channel.groupTitle.isEmpty
               ? _subOf(channel)
@@ -823,6 +853,133 @@ class _PanelEmpty extends StatelessWidget {
           message,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _CountryChip extends StatefulWidget {
+  const _CountryChip({
+    super.key,
+    required this.node,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final FocusNode node;
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_CountryChip> createState() => _CountryChipState();
+}
+
+class _CountryChipState extends State<_CountryChip> {
+  bool _focused = false;
+  bool _hovered = false;
+
+  bool get _active => _focused || _hovered;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color textColor = widget.selected
+        ? kNeonCyan
+        : (_active ? Colors.white : const Color(0xFFD5D5E0));
+    return FocusableActionDetector(
+      focusNode: widget.node,
+      onShowFocusHighlight: (value) {
+        if (_focused == value) return;
+        setState(() {
+          _focused = value;
+        });
+        if (value) {
+          Scrollable.ensureVisible(
+            context,
+            alignment: 0.5,
+            duration: const Duration(milliseconds: 160),
+          );
+        }
+      },
+      shortcuts: const <ShortcutActivator, Intent>{},
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (event) {
+          if (_hovered) return;
+          setState(() {
+            _hovered = true;
+          });
+        },
+        onExit: (event) {
+          if (!_hovered) return;
+          setState(() {
+            _hovered = false;
+          });
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: widget.selected
+                  ? kNeonCyanSoft
+                  : (_active ? kNeonSurfaceHigh : Colors.transparent),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: _active || widget.selected
+                    ? kNeonCyan
+                    : const Color(0xFF3A3A4E),
+                width: _active ? 2 : 1,
+              ),
+              boxShadow: _active
+                  ? const <BoxShadow>[
+                      BoxShadow(
+                        color: kNeonCyanGlow,
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : const <BoxShadow>[],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight:
+                        widget.selected ? FontWeight.w700 : FontWeight.w500,
+                    color: textColor,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${widget.count}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A8A9B),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -97,6 +97,171 @@ String _cleanSeriesName(String raw) {
   return text;
 }
 
+const Map<String, String> _countryAliases = <String, String>{
+  'tr': 'Türkiye',
+  'tur': 'Türkiye',
+  'turkey': 'Türkiye',
+  'turkiye': 'Türkiye',
+  'turk': 'Türkiye',
+  'turkish': 'Türkiye',
+  'de': 'Almanya',
+  'ger': 'Almanya',
+  'germany': 'Almanya',
+  'german': 'Almanya',
+  'deutschland': 'Almanya',
+  'deutsch': 'Almanya',
+  'almanya': 'Almanya',
+  'uk': 'İngiltere',
+  'gb': 'İngiltere',
+  'gbr': 'İngiltere',
+  'england': 'İngiltere',
+  'britain': 'İngiltere',
+  'british': 'İngiltere',
+  'ingiltere': 'İngiltere',
+  'us': 'ABD',
+  'usa': 'ABD',
+  'abd': 'ABD',
+  'america': 'ABD',
+  'amerika': 'ABD',
+  'american': 'ABD',
+  'fr': 'Fransa',
+  'fra': 'Fransa',
+  'france': 'Fransa',
+  'french': 'Fransa',
+  'fransa': 'Fransa',
+  'nl': 'Hollanda',
+  'nld': 'Hollanda',
+  'netherlands': 'Hollanda',
+  'holland': 'Hollanda',
+  'dutch': 'Hollanda',
+  'hollanda': 'Hollanda',
+  'it': 'İtalya',
+  'ita': 'İtalya',
+  'italy': 'İtalya',
+  'italia': 'İtalya',
+  'italya': 'İtalya',
+  'es': 'İspanya',
+  'esp': 'İspanya',
+  'spain': 'İspanya',
+  'ispanya': 'İspanya',
+  'pt': 'Portekiz',
+  'portugal': 'Portekiz',
+  'portekiz': 'Portekiz',
+  'be': 'Belçika',
+  'belgium': 'Belçika',
+  'belcika': 'Belçika',
+  'at': 'Avusturya',
+  'austria': 'Avusturya',
+  'avusturya': 'Avusturya',
+  'ch': 'İsviçre',
+  'switzerland': 'İsviçre',
+  'isvicre': 'İsviçre',
+  'ru': 'Rusya',
+  'rus': 'Rusya',
+  'russia': 'Rusya',
+  'rusya': 'Rusya',
+  'az': 'Azerbaycan',
+  'azerbaijan': 'Azerbaycan',
+  'azerbaycan': 'Azerbaycan',
+  'pl': 'Polonya',
+  'poland': 'Polonya',
+  'polonya': 'Polonya',
+  'gr': 'Yunanistan',
+  'greece': 'Yunanistan',
+  'yunanistan': 'Yunanistan',
+  'ro': 'Romanya',
+  'romania': 'Romanya',
+  'romanya': 'Romanya',
+  'bg': 'Bulgaristan',
+  'bulgaria': 'Bulgaristan',
+  'bulgaristan': 'Bulgaristan',
+  'al': 'Arnavutluk',
+  'albania': 'Arnavutluk',
+  'arnavutluk': 'Arnavutluk',
+  'ar': 'Arap',
+  'arab': 'Arap',
+  'arabic': 'Arap',
+  'ca': 'Kanada',
+  'canada': 'Kanada',
+  'kanada': 'Kanada',
+  'se': 'İsveç',
+  'sweden': 'İsveç',
+  'isvec': 'İsveç',
+  'dk': 'Danimarka',
+  'denmark': 'Danimarka',
+  'danimarka': 'Danimarka',
+  'no': 'Norveç',
+  'norway': 'Norveç',
+  'norvec': 'Norveç',
+  'ex': 'Eski Yugoslavya',
+  'yu': 'Eski Yugoslavya',
+  'ba': 'Eski Yugoslavya',
+  'rs': 'Eski Yugoslavya',
+  'hr': 'Eski Yugoslavya',
+  'ku': 'Kürtçe',
+  'kurdish': 'Kürtçe',
+  'kurdistan': 'Kürtçe',
+};
+
+String? _countryFromToken(String token, bool isFirst) {
+  if (token.isEmpty) return null;
+  if (!isFirst && token.length < 4) return null;
+  return _countryAliases[token];
+}
+
+String? _detectCountry(String foldedText) {
+  final tokens = foldedText
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((token) => token.isNotEmpty)
+      .toList();
+  for (var i = 0; i < tokens.length; i++) {
+    final country = _countryFromToken(tokens[i], i == 0);
+    if (country != null) return country;
+  }
+  if (foldedText.contains('united kingdom')) return 'İngiltere';
+  if (foldedText.contains('united states')) return 'ABD';
+  return null;
+}
+
+class _LiveClass {
+  const _LiveClass(this.country, this.subCategory);
+  final String country;
+  final String subCategory;
+}
+
+_LiveClass _classifyLive(String group, String name) {
+  final foldedGroup = _fold(group);
+  var country = _detectCountry(foldedGroup);
+  if (country == null) {
+    final prefix = RegExp(r'^\s*[\[\(|]?\s*([A-Za-z]{2,3})\s*[\]\)|:\-]')
+        .firstMatch(name);
+    if (prefix != null) {
+      country = _countryAliases[_fold(prefix.group(1) ?? '')];
+    }
+  }
+  if (country == null) {
+    final raw = group.trim();
+    return _LiveClass('Diğer', raw.isEmpty ? 'Genel' : raw);
+  }
+  final parts = group
+      .split(RegExp(r'[-|:/\[\]()]'))
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .where((part) {
+    final tokens = _fold(part)
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((token) => token.isNotEmpty)
+        .toList();
+    if (tokens.isEmpty) return false;
+    return !(tokens.length == 1 && _countryAliases.containsKey(tokens.first));
+  }).toList();
+  var sub = parts.isEmpty ? '' : _normalizeCategory(parts.join(' '));
+  if (sub.isEmpty || sub == 'Genel') {
+    sub = _guessCategory(_fold('$name $group'));
+  }
+  return _LiveClass(country, sub);
+}
+
 PlaylistData parseM3u(String text) {
   final live = <MediaItem>[];
   final movies = <MediaItem>[];
@@ -109,7 +274,6 @@ PlaylistData parseM3u(String text) {
   final logoRe = RegExp(r'tvg-logo="([^"]*)"');
   final groupRe = RegExp(r'group-title="([^"]*)"');
   final episodeRe = RegExp(r'[Ss](\d{1,2})\s*[Ee](\d{1,2})');
-  final separatorRe = RegExp(r'[-|:/]');
 
   var pending = false;
   var name = '';
@@ -137,9 +301,16 @@ PlaylistData parseM3u(String text) {
     final id = url.hashCode.toString();
     final folded = _fold('$name $group');
     final episodeMatch = episodeRe.firstMatch(name);
-    final isSeries = folded.contains('dizi') ||
-        folded.contains('series') ||
-        episodeMatch != null;
+    final lowerUrlAll = url.toLowerCase();
+    final urlPath = lowerUrlAll.split('?').first;
+    final isLiveUrl = lowerUrlAll.contains('/live/') ||
+        urlPath.endsWith('.m3u8') ||
+        urlPath.endsWith('.ts');
+    final isSeries = lowerUrlAll.contains('/series/') ||
+        (!isLiveUrl &&
+            (folded.contains('dizi') ||
+                folded.contains('series') ||
+                episodeMatch != null));
 
     if (isSeries) {
       int? season;
@@ -188,7 +359,8 @@ PlaylistData parseM3u(String text) {
         folded.contains('movie') ||
         folded.contains('sinema');
 
-    if (isVideoFile || isMovieGroup) {
+    if (lowerUrl.contains('/movie/') ||
+        (!isLiveUrl && (isVideoFile || isMovieGroup))) {
       final isNew = folded.contains('yeni') ||
           folded.contains('new') ||
           folded.contains('2025') ||
@@ -210,20 +382,9 @@ PlaylistData parseM3u(String text) {
       continue;
     }
 
-    final parts = group
-        .split(separatorRe)
-        .map((part) => part.trim())
-        .where((part) => part.isNotEmpty)
-        .toList();
-    var country = 'Diğer';
-    var subCategory = 'Genel';
-    if (parts.length > 1) {
-      country = parts.first;
-      subCategory = _normalizeCategory(parts.sublist(1).join(' '));
-    } else {
-      subCategory = _guessCategory(folded);
-    }
-    if (country.trim().isEmpty) country = 'Diğer';
+    final classified = _classifyLive(group, name);
+    final country = classified.country;
+    final subCategory = classified.subCategory;
     live.add(MediaItem(
       id: id,
       name: name,
