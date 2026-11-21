@@ -80,7 +80,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _saveProgress();
     });
-    _player.open(Media(widget.item.url));
+    _player.open(Media(widget.item.url, httpHeaders: widget.item.httpHeaders));
   }
 
   @override

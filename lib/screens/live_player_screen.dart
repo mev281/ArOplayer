@@ -63,7 +63,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (channels.isNotEmpty) {
       final initial = widget.initialChannel ?? channels.first;
       _current = initial;
-      _player.open(Media(initial.url));
+      _player.open(Media(initial.url, httpHeaders: initial.httpHeaders));
     }
     _buildIndex();
     _refreshSubs();
@@ -172,7 +172,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     setState(() {
       _current = item;
     });
-    _player.open(Media(item.url));
+    _player.open(Media(item.url, httpHeaders: item.httpHeaders));
     _showOsd();
   }
 

@@ -12,6 +12,8 @@ class MediaItem {
   final String? seriesName;
   final int? season;
   final int? episode;
+  final String userAgent;
+  final String referrer;
 
   const MediaItem({
     required this.id,
@@ -25,7 +27,16 @@ class MediaItem {
     this.seriesName,
     this.season,
     this.episode,
+    this.userAgent = '',
+    this.referrer = '',
   });
+
+  Map<String, String>? get httpHeaders {
+    final headers = <String, String>{};
+    if (userAgent.isNotEmpty) headers['User-Agent'] = userAgent;
+    if (referrer.isNotEmpty) headers['Referer'] = referrer;
+    return headers.isEmpty ? null : headers;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -39,6 +50,8 @@ class MediaItem {
         'seriesName': seriesName,
         'season': season,
         'episode': episode,
+        'userAgent': userAgent,
+        'referrer': referrer,
       };
 
   factory MediaItem.fromJson(Map<String, dynamic> j) => MediaItem(
@@ -56,6 +69,8 @@ class MediaItem {
         seriesName: j['seriesName'] as String?,
         season: j['season'] as int?,
         episode: j['episode'] as int?,
+        userAgent: (j['userAgent'] ?? '') as String,
+        referrer: (j['referrer'] ?? '') as String,
       );
 }
 

@@ -223,15 +223,199 @@ String? _detectCountry(String foldedText) {
   return null;
 }
 
+const Map<String, String> _isoCountries = <String, String>{
+  'us': 'ABD',
+  'tr': 'Türkiye',
+  'de': 'Almanya',
+  'uk': 'İngiltere',
+  'gb': 'İngiltere',
+  'fr': 'Fransa',
+  'nl': 'Hollanda',
+  'it': 'İtalya',
+  'es': 'İspanya',
+  'pt': 'Portekiz',
+  'be': 'Belçika',
+  'at': 'Avusturya',
+  'ch': 'İsviçre',
+  'ru': 'Rusya',
+  'ua': 'Ukrayna',
+  'pl': 'Polonya',
+  'ro': 'Romanya',
+  'bg': 'Bulgaristan',
+  'gr': 'Yunanistan',
+  'hu': 'Macaristan',
+  'cz': 'Çekya',
+  'sk': 'Slovakya',
+  'rs': 'Sırbistan',
+  'hr': 'Hırvatistan',
+  'ba': 'Bosna Hersek',
+  'si': 'Slovenya',
+  'mk': 'Kuzey Makedonya',
+  'al': 'Arnavutluk',
+  'xk': 'Kosova',
+  'me': 'Karadağ',
+  'az': 'Azerbaycan',
+  'ge': 'Gürcistan',
+  'am': 'Ermenistan',
+  'kz': 'Kazakistan',
+  'uz': 'Özbekistan',
+  'by': 'Belarus',
+  'lt': 'Litvanya',
+  'lv': 'Letonya',
+  'ee': 'Estonya',
+  'fi': 'Finlandiya',
+  'se': 'İsveç',
+  'no': 'Norveç',
+  'dk': 'Danimarka',
+  'is': 'İzlanda',
+  'ie': 'İrlanda',
+  'lu': 'Lüksemburg',
+  'mt': 'Malta',
+  'cy': 'Kıbrıs',
+  'md': 'Moldova',
+  'in': 'Hindistan',
+  'pk': 'Pakistan',
+  'bd': 'Bangladeş',
+  'lk': 'Sri Lanka',
+  'np': 'Nepal',
+  'af': 'Afganistan',
+  'ir': 'İran',
+  'iq': 'Irak',
+  'sy': 'Suriye',
+  'lb': 'Lübnan',
+  'jo': 'Ürdün',
+  'il': 'İsrail',
+  'ps': 'Filistin',
+  'sa': 'Suudi Arabistan',
+  'ae': 'BAE',
+  'kw': 'Kuveyt',
+  'qa': 'Katar',
+  'bh': 'Bahreyn',
+  'om': 'Umman',
+  'ye': 'Yemen',
+  'eg': 'Mısır',
+  'ly': 'Libya',
+  'tn': 'Tunus',
+  'dz': 'Cezayir',
+  'ma': 'Fas',
+  'sd': 'Sudan',
+  'so': 'Somali',
+  'ke': 'Kenya',
+  'ng': 'Nijerya',
+  'gh': 'Gana',
+  'za': 'Güney Afrika',
+  'et': 'Etiyopya',
+  'sn': 'Senegal',
+  'ci': 'Fildişi Sahili',
+  'cm': 'Kamerun',
+  'cn': 'Çin',
+  'hk': 'Hong Kong',
+  'tw': 'Tayvan',
+  'jp': 'Japonya',
+  'kr': 'Güney Kore',
+  'kp': 'Kuzey Kore',
+  'mn': 'Moğolistan',
+  'th': 'Tayland',
+  'vn': 'Vietnam',
+  'id': 'Endonezya',
+  'my': 'Malezya',
+  'sg': 'Singapur',
+  'ph': 'Filipinler',
+  'kh': 'Kamboçya',
+  'mm': 'Myanmar',
+  'au': 'Avustralya',
+  'nz': 'Yeni Zelanda',
+  'ca': 'Kanada',
+  'mx': 'Meksika',
+  'br': 'Brezilya',
+  'ar': 'Arjantin',
+  'cl': 'Şili',
+  'co': 'Kolombiya',
+  'pe': 'Peru',
+  've': 'Venezuela',
+  'ec': 'Ekvador',
+  'uy': 'Uruguay',
+  'py': 'Paraguay',
+  'bo': 'Bolivya',
+  'cr': 'Kosta Rika',
+  'pa': 'Panama',
+  'gt': 'Guatemala',
+  'hn': 'Honduras',
+  'sv': 'El Salvador',
+  'ni': 'Nikaragua',
+  'do': 'Dominik Cumhuriyeti',
+  'cu': 'Küba',
+  'pr': 'Porto Riko',
+  'jm': 'Jamaika',
+  'ht': 'Haiti',
+  'tt': 'Trinidad ve Tobago',
+};
+
+const Map<String, String> _categoryNames = <String, String>{
+  'news': 'Haber',
+  'sports': 'Spor',
+  'sport': 'Spor',
+  'music': 'Müzik',
+  'documentary': 'Belgesel',
+  'movies': 'Sinema',
+  'movie': 'Sinema',
+  'series': 'Dizi',
+  'kids': 'Çocuk',
+  'general': 'Genel',
+  'undefined': 'Genel',
+  'entertainment': 'Eğlence',
+  'religious': 'Dini',
+  'legislative': 'Meclis',
+  'education': 'Eğitim',
+  'culture': 'Kültür',
+  'comedy': 'Komedi',
+  'lifestyle': 'Yaşam',
+  'animation': 'Animasyon',
+  'shop': 'Alışveriş',
+  'business': 'Ekonomi',
+  'outdoor': 'Doğa',
+  'classic': 'Klasik',
+  'travel': 'Seyahat',
+  'cooking': 'Yemek',
+  'family': 'Aile',
+  'auto': 'Otomobil',
+  'weather': 'Hava Durumu',
+  'science': 'Bilim',
+  'public': 'Kamu',
+  'relax': 'Rahatlama',
+  'interactive': 'İnteraktif',
+  'xxx': 'Yetişkin',
+};
+
+String _categoryFromGroup(String group) {
+  final first = group
+      .split(RegExp(r'[;,]'))
+      .map((part) => part.trim())
+      .firstWhere((part) => part.isNotEmpty, orElse: () => '');
+  if (first.isEmpty) return 'Genel';
+  final mapped = _categoryNames[first.toLowerCase()];
+  if (mapped != null) return mapped;
+  return _normalizeCategory(first);
+}
+
+String? _countryFromTvgId(String tvgId) {
+  final match = RegExp(r'\.([A-Za-z]{2,3})(?:@|$)').firstMatch(tvgId);
+  if (match == null) return null;
+  return _isoCountries[(match.group(1) ?? '').toLowerCase()];
+}
+
 class _LiveClass {
   const _LiveClass(this.country, this.subCategory);
   final String country;
   final String subCategory;
 }
 
-_LiveClass _classifyLive(String group, String name) {
+_LiveClass _classifyLive(String group, String name, String tvgId) {
   final foldedGroup = _fold(group);
-  var country = _detectCountry(foldedGroup);
+  var country = _countryFromTvgId(tvgId) ?? _detectCountry(foldedGroup);
+  if (country != null && _countryFromTvgId(tvgId) != null) {
+    return _LiveClass(country, _categoryFromGroup(group));
+  }
   if (country == null) {
     final prefix = RegExp(r'^\s*[\[\(|]?\s*([A-Za-z]{2,3})\s*[\]\)|:\-]')
         .firstMatch(name);
@@ -273,12 +457,18 @@ PlaylistData parseM3u(String text) {
 
   final logoRe = RegExp(r'tvg-logo="([^"]*)"');
   final groupRe = RegExp(r'group-title="([^"]*)"');
+  final tvgIdRe = RegExp(r'tvg-id="([^"]*)"');
+  final uaRe = RegExp(r'http-user-agent="([^"]*)"');
+  final refRe = RegExp(r'http-referrer="([^"]*)"');
   final episodeRe = RegExp(r'[Ss](\d{1,2})\s*[Ee](\d{1,2})');
 
   var pending = false;
   var name = '';
   var logo = '';
   var group = '';
+  var tvgId = '';
+  var userAgent = '';
+  var referrer = '';
 
   for (final rawLine in text.split('\n')) {
     final line = rawLine.trim();
@@ -287,6 +477,9 @@ PlaylistData parseM3u(String text) {
     if (line.startsWith('#EXTINF')) {
       logo = logoRe.firstMatch(line)?.group(1)?.trim() ?? '';
       group = groupRe.firstMatch(line)?.group(1)?.trim() ?? '';
+      tvgId = tvgIdRe.firstMatch(line)?.group(1)?.trim() ?? '';
+      userAgent = uaRe.firstMatch(line)?.group(1)?.trim() ?? '';
+      referrer = refRe.firstMatch(line)?.group(1)?.trim() ?? '';
       final comma = line.lastIndexOf(',');
       name = comma >= 0 ? line.substring(comma + 1).trim() : '';
       pending = true;
@@ -303,8 +496,10 @@ PlaylistData parseM3u(String text) {
     final episodeMatch = episodeRe.firstMatch(name);
     final lowerUrlAll = url.toLowerCase();
     final urlPath = lowerUrlAll.split('?').first;
-    final isLiveUrl = lowerUrlAll.contains('/live/') ||
+    final isLiveUrl = tvgId.contains('@') ||
+        lowerUrlAll.contains('/live/') ||
         urlPath.endsWith('.m3u8') ||
+        urlPath.endsWith('.mpd') ||
         urlPath.endsWith('.ts');
     final isSeries = lowerUrlAll.contains('/series/') ||
         (!isLiveUrl &&
@@ -382,7 +577,7 @@ PlaylistData parseM3u(String text) {
       continue;
     }
 
-    final classified = _classifyLive(group, name);
+    final classified = _classifyLive(group, name, tvgId);
     final country = classified.country;
     final subCategory = classified.subCategory;
     live.add(MediaItem(
@@ -394,6 +589,8 @@ PlaylistData parseM3u(String text) {
       type: MediaType.live,
       country: country,
       subCategory: subCategory,
+      userAgent: userAgent,
+      referrer: referrer,
     ));
   }
 

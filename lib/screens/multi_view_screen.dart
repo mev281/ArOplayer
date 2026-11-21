@@ -142,7 +142,7 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
     });
     final player = _players[index];
     if (player != null) {
-      player.open(Media(selected.url));
+      player.open(Media(selected.url, httpHeaders: selected.httpHeaders));
     }
   }
 
