@@ -1,0 +1,93 @@
+name: Build All
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create platform folders
+        run: flutter create --platforms=android,windows --org com.aroplayer --project-name aroplayer .
+
+      - name: Set package id to com.aroplayer.app
+        run: |
+          sed -i 's/com\.aroplayer\.aroplayer/com.aroplayer.app/g' android/app/build.gradle* || true
+          rm -rf android/app/src/main/kotlin/com/aroplayer/aroplayer
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArOplayer-FireTV-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create platform folders
+        run: flutter create --platforms=android,windows --org com.aroplayer --project-name aroplayer .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Compress Windows build
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ArOplayer-Windows.zip -Force
+
+      - name: Upload Windows zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArOplayer-Windows-zip
+          path: ArOplayer-Windows.zip
+          if-no-files-found: error
