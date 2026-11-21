@@ -698,7 +698,7 @@ class _PanelRowState extends State<_PanelRow> {
     final Color titleColor = widget.selected
         ? kNeonCyan
         : (_active ? Colors.white : const Color(0xFFD5D5E0));
-    return FocusableActionDetector(
+    return Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _handleKey, child: FocusableActionDetector(
       focusNode: _node,
       onShowFocusHighlight: (value) {
         if (_focused == value) return;
@@ -715,7 +715,7 @@ class _PanelRowState extends State<_PanelRow> {
           },
         ),
       },
-      onKeyEvent: _handleKey,
+      
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (event) {
@@ -805,7 +805,7 @@ class _PanelRowState extends State<_PanelRow> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

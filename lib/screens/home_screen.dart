@@ -964,7 +964,7 @@ class _SidebarItemState extends State<_SidebarItem> {
     final Color foreground = widget.selected
         ? kNeonCyan
         : (_active ? Colors.white : const Color(0xFFB9B9C9));
-    return FocusableActionDetector(
+    return Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _handleKey, child: FocusableActionDetector(
       focusNode: widget.focusNode,
       onShowFocusHighlight: (value) {
         if (_focused == value) return;
@@ -981,7 +981,7 @@ class _SidebarItemState extends State<_SidebarItem> {
           },
         ),
       },
-      onKeyEvent: _handleKey,
+      
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (event) {
@@ -1056,7 +1056,7 @@ class _SidebarItemState extends State<_SidebarItem> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

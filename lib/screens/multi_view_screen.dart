@@ -50,11 +50,9 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
   @override
   void dispose() {
     for (var i = 0; i < 4; i++) {
-      final controller = _controllers[i];
       final player = _players[i];
       _controllers[i] = null;
       _players[i] = null;
-      controller?.dispose();
       player?.dispose();
     }
     _rootFocus.dispose();
@@ -69,12 +67,10 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
         _players[i] = player;
         _controllers[i] = VideoController(player);
       } else if (!needed && _players[i] != null) {
-        final controller = _controllers[i];
         final player = _players[i];
         _controllers[i] = null;
         _players[i] = null;
         _slots[i] = null;
-        controller?.dispose();
         player?.dispose();
       }
     }
@@ -483,7 +479,7 @@ class _TopButtonState extends State<_TopButton> {
     final Color foreground = widget.selected
         ? kNeonCyan
         : (_active ? Colors.white : const Color(0xFFB9B9C9));
-    return FocusableActionDetector(
+    return Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _handleKey, child: FocusableActionDetector(
       focusNode: _node,
       onShowFocusHighlight: (value) {
         if (_focused == value) return;
@@ -500,7 +496,7 @@ class _TopButtonState extends State<_TopButton> {
           },
         ),
       },
-      onKeyEvent: _handleKey,
+      
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (event) {
@@ -559,7 +555,7 @@ class _TopButtonState extends State<_TopButton> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
