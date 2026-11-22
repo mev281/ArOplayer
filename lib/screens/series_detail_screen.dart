@@ -1,10 +1,25 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
 import '../services/storage_service.dart';
+import '../widgets/poster_card.dart';
 import 'vod_player_screen.dart';
+
+class _PlayTarget {
+  const _PlayTarget({
+    required this.item,
+    required this.playlist,
+    required this.startSec,
+  });
+
+  final MediaItem item;
+  final List<MediaItem> playlist;
+  final int startSec;
+}
 
 class SeriesDetailScreen extends StatefulWidget {
   const SeriesDetailScreen({super.key, required this.series});
@@ -55,6 +70,41 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     return 0;
   }
 
+  _PlayTarget? _playTarget() {
+    for (final key in _seasonKeys) {
+      final list = widget.series.seasons[key];
+      if (list == null) continue;
+      for (final episode in list) {
+        final saved = StorageService.instance.progressFor(episode.id);
+        if (saved != null) {
+          return _PlayTarget(
+            item: episode,
+            playlist: list,
+            startSec: saved,
+          );
+        }
+      }
+    }
+    for (final key in _seasonKeys) {
+      final list = widget.series.seasons[key];
+      if (list == null || list.isEmpty) continue;
+      return _PlayTarget(item: list.first, playlist: list, startSec: 0);
+    }
+    return null;
+  }
+
+  void _openTarget(_PlayTarget target) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => VodPlayerScreen(
+          item: target.item,
+          startAt: Duration(seconds: target.startSec),
+          playlist: target.playlist,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -63,7 +113,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _buildHeader(),
+            _buildHero(),
             _buildSeasonBar(),
             Expanded(child: _buildEpisodes()),
           ],
@@ -72,96 +122,113 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildHero() {
+    final target = _playTarget();
+    return SizedBox(
+      height: 330,
+      child: Stack(
+        fit: StackFit.expand,
         children: <Widget>[
-          _BackButton(
-            onTap: () {
-              Navigator.of(context).maybePop();
-            },
-          ),
-          const SizedBox(width: 18),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 110,
-              height: 165,
-              child: _buildPoster(),
+          _buildHeroBackdrop(),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: <Color>[
+                    kNeonBackground.withOpacity(0.96),
+                    kNeonBackground.withOpacity(0.72),
+                    kNeonBackground.withOpacity(0.18),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  widget.series.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    color: Colors.white,
-                  ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: <Color>[
+                    kNeonBackground,
+                    kNeonBackground.withOpacity(0.35),
+                    Colors.transparent,
+                  ],
+                  stops: const <double>[0, 0.45, 1],
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: <Widget>[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: kNeonCyanSoft,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: kNeonCyan),
-                      ),
-                      child: Text(
-                        '${widget.series.episodeCount} bölüm',
+              ),
+            ),
+          ),
+          Positioned(
+            top: 20,
+            left: 28,
+            child: _BackButton(
+              onTap: () {
+                Navigator.of(context).maybePop();
+              },
+            ),
+          ),
+          Positioned(
+            left: 28,
+            right: 28,
+            bottom: 20,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                _buildHeroPoster(),
+                const SizedBox(width: 22),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        widget.series.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: kNeonCyan,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          height: 1.1,
+                          color: Colors.white,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: kNeonSurfaceHigh,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: kNeonBorder),
-                      ),
-                      child: Text(
-                        '${_seasonKeys.length} sezon',
+                      const SizedBox(height: 10),
+                      Text(
+                        '${_seasonKeys.length} Sezon · ${widget.series.episodeCount} Bölüm',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                           color: Color(0xFFB9B9C9),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  widget.series.groupTitle.isEmpty
-                      ? 'Dizi'
-                      : widget.series.groupTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF8A8A9B),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.series.groupTitle.isEmpty
+                            ? 'Dizi'
+                            : widget.series.groupTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8A8A9B),
+                        ),
+                      ),
+                      if (target != null) ...<Widget>[
+                        const SizedBox(height: 16),
+                        _PlayButton(
+                          label: target.startSec > 0 ? 'Devam Et' : 'İzle',
+                          onTap: () {
+                            _openTarget(target);
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
@@ -172,10 +239,73 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     );
   }
 
-  Widget _buildPoster() {
+  Widget _buildHeroBackdrop() {
     final logo = widget.series.logo;
     if (logo.isEmpty) {
-      return _posterPlaceholder();
+      return const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[Color(0xFF1E293B), Color(0xFF0F172A)],
+          ),
+        ),
+      );
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        Container(color: kNeonSurface),
+        ImageFiltered(
+          imageFilter: ImageFilter.blur(
+            sigmaX: 18,
+            sigmaY: 18,
+            tileMode: TileMode.clamp,
+          ),
+          child: CachedNetworkImage(
+            imageUrl: logo,
+            fit: BoxFit.cover,
+            placeholder: (context, value) => Container(color: kNeonSurface),
+            errorWidget: (context, value, error) =>
+                Container(color: kNeonSurface),
+          ),
+        ),
+        Container(color: Colors.black.withOpacity(0.35)),
+      ],
+    );
+  }
+
+  Widget _buildHeroPoster() {
+    return SizedBox(
+      width: 140,
+      height: 210,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: kNeonCyan.withOpacity(0.45), width: 1),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x66000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: _buildPosterImage(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPosterImage() {
+    final logo = widget.series.logo;
+    if (logo.isEmpty) {
+      return PosterFallback(
+        title: widget.series.name,
+        icon: Icons.tv_rounded,
+      );
     }
     return CachedNetworkImage(
       imageUrl: logo,
@@ -189,28 +319,9 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
-      errorWidget: (context, value, error) => _posterPlaceholder(),
-    );
-  }
-
-  Widget _posterPlaceholder() {
-    return Container(
-      color: kNeonSurfaceHigh,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.tv_rounded, color: Color(0xFF4A4A5E), size: 32),
-          const SizedBox(height: 8),
-          Text(
-            widget.series.name,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF8A8A9B)),
-          ),
-        ],
+      errorWidget: (context, value, error) => PosterFallback(
+        title: widget.series.name,
+        icon: Icons.tv_rounded,
       ),
     );
   }
@@ -262,6 +373,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         final saved = StorageService.instance.progressFor(episode.id);
         return _EpisodeRow(
           episode: episode,
+          number: episode.episode ?? index + 1,
           savedSeconds: saved,
           fraction: saved == null ? 0 : _fractionFor(episode.id),
           onTap: () {
@@ -363,6 +475,110 @@ class _BackButtonState extends State<_BackButton> {
               Icons.arrow_back_rounded,
               size: 20,
               color: _active ? kNeonCyan : Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayButton extends StatefulWidget {
+  const _PlayButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> {
+  final FocusNode _node = FocusNode(debugLabel: 'series-play');
+  bool _focused = false;
+  bool _hovered = false;
+
+  bool get _active => _focused || _hovered;
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusableActionDetector(
+      focusNode: _node,
+      onShowFocusHighlight: (value) {
+        if (_focused == value) return;
+        setState(() {
+          _focused = value;
+        });
+      },
+      shortcuts: const <ShortcutActivator, Intent>{},
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (event) {
+          if (_hovered) return;
+          setState(() {
+            _hovered = true;
+          });
+        },
+        onExit: (event) {
+          if (!_hovered) return;
+          setState(() {
+            _hovered = false;
+          });
+        },
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+            decoration: BoxDecoration(
+              color: kNeonMagenta,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _active ? Colors.white : kNeonMagenta,
+                width: _active ? 2.5 : 1,
+              ),
+              boxShadow: _active
+                  ? const <BoxShadow>[
+                      BoxShadow(
+                        color: kNeonMagentaGlow,
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : const <BoxShadow>[],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const Icon(
+                  Icons.play_arrow_rounded,
+                  size: 22,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -478,12 +694,14 @@ class _SeasonChipState extends State<_SeasonChip> {
 class _EpisodeRow extends StatefulWidget {
   const _EpisodeRow({
     required this.episode,
+    required this.number,
     required this.savedSeconds,
     required this.fraction,
     required this.onTap,
   });
 
   final MediaItem episode;
+  final int number;
   final int? savedSeconds;
   final double fraction;
   final VoidCallback onTap;
@@ -506,12 +724,7 @@ class _EpisodeRowState extends State<_EpisodeRow> {
   }
 
   String _code() {
-    final season = widget.episode.season;
-    final episode = widget.episode.episode;
-    if (season == null || episode == null) return '';
-    final s = season.toString().padLeft(2, '0');
-    final e = episode.toString().padLeft(2, '0');
-    return 'S${s}E$e';
+    return 'E${widget.number.toString().padLeft(2, '0')}';
   }
 
   String _formatSeconds(int total) {
@@ -529,7 +742,6 @@ class _EpisodeRowState extends State<_EpisodeRow> {
 
   @override
   Widget build(BuildContext context) {
-    final code = _code();
     final saved = widget.savedSeconds;
     return FocusableActionDetector(
       focusNode: _node,
@@ -587,33 +799,26 @@ class _EpisodeRowState extends State<_EpisodeRow> {
             ),
             child: Row(
               children: <Widget>[
-                Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: _active ? kNeonCyanSoft : kNeonSurfaceHigh,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: _active ? kNeonCyan : kNeonBorder,
+                SizedBox(
+                  width: 54,
+                  child: Text(
+                    _code(),
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: _active ? kNeonCyan : const Color(0xFFB9B9C9),
                     ),
                   ),
-                  child: Icon(
-                    Icons.play_arrow_rounded,
-                    size: 22,
-                    color: _active ? kNeonCyan : Colors.white,
-                  ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Text(
-                        code.isEmpty
-                            ? widget.episode.name
-                            : '$code - ${widget.episode.name}',
+                        widget.episode.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -648,10 +853,22 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: Color(0xFF6E6E80),
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _active ? kNeonCyanSoft : kNeonSurfaceHigh,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _active ? kNeonCyan : kNeonBorder,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    size: 22,
+                    color: _active ? kNeonCyan : Colors.white,
+                  ),
                 ),
               ],
             ),

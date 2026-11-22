@@ -8,16 +8,16 @@ import 'screens/setup_screen.dart';
 import 'services/m3u_parser.dart';
 import 'services/storage_service.dart';
 
-const Color kNeonCyan = Color(0xFF00E5FF);
-const Color kNeonMagenta = Color(0xFFFF2E93);
-const Color kNeonBackground = Color(0xFF0B0B12);
-const Color kNeonSurface = Color(0xFF15151F);
-const Color kNeonSurfaceHigh = Color(0xFF1E1E2B);
-const Color kNeonBorder = Color(0xFF2A2A3A);
-const Color kNeonCyanSoft = Color(0x3300E5FF);
-const Color kNeonCyanGlow = Color(0x7300E5FF);
-const Color kNeonMagentaSoft = Color(0x33FF2E93);
-const Color kNeonMagentaGlow = Color(0x73FF2E93);
+const Color kNeonCyan = Color(0xFF3B8BFF);
+const Color kNeonMagenta = Color(0xFFE50914);
+const Color kNeonBackground = Color(0xFF0F172A);
+const Color kNeonSurface = Color(0xFF1E293B);
+const Color kNeonSurfaceHigh = Color(0xFF273449);
+const Color kNeonBorder = Color(0xFF334155);
+const Color kNeonCyanSoft = Color(0x333B8BFF);
+const Color kNeonCyanGlow = Color(0x733B8BFF);
+const Color kNeonMagentaSoft = Color(0x33E50914);
+const Color kNeonMagentaGlow = Color(0x73E50914);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

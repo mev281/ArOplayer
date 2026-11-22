@@ -1,8 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../widgets/poster_card.dart';
 import 'series_detail_screen.dart';
 import 'vod_player_screen.dart';
 
@@ -16,6 +16,50 @@ String _foldText(String input) {
   text = text.replaceAll('\u00F6', 'o');
   text = text.replaceAll('\u00E7', 'c');
   return text;
+}
+
+class _VodEntry {
+  const _VodEntry({
+    required this.title,
+    required this.logo,
+    required this.group,
+    this.movie,
+    this.series,
+    this.badge,
+  });
+
+  final String title;
+  final String logo;
+  final String group;
+  final MediaItem? movie;
+  final SeriesItem? series;
+  final String? badge;
+}
+
+class _VodRow {
+  const _VodRow({required this.title, required this.entries});
+
+  final String title;
+  final List<_VodEntry> entries;
+}
+
+void _openEntry(BuildContext context, _VodEntry entry) {
+  final series = entry.series;
+  if (series != null) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => SeriesDetailScreen(series: series),
+      ),
+    );
+    return;
+  }
+  final movie = entry.movie;
+  if (movie == null) return;
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => VodPlayerScreen(item: movie),
+    ),
+  );
 }
 
 class VodGridScreen extends StatefulWidget {
@@ -40,7 +84,6 @@ class _VodGridScreenState extends State<VodGridScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   String _query = '';
-  String? _group;
 
   @override
   void dispose() {
@@ -48,41 +91,58 @@ class _VodGridScreenState extends State<VodGridScreen> {
     super.dispose();
   }
 
-  List<String> _groups() {
-    final values = <String>{};
+  List<_VodEntry> _entries() {
+    final list = <_VodEntry>[];
     for (final item in widget.movies) {
-      if (item.groupTitle.trim().isNotEmpty) {
-        values.add(item.groupTitle.trim());
-      }
+      final group = item.groupTitle.trim();
+      list.add(_VodEntry(
+        title: item.name,
+        logo: item.logo,
+        group: group.isEmpty ? 'Diğer' : group,
+        movie: item,
+      ));
     }
-    for (final item in widget.series) {
-      if (item.groupTitle.trim().isNotEmpty) {
-        values.add(item.groupTitle.trim());
-      }
+    for (final entry in widget.series) {
+      final group = entry.groupTitle.trim();
+      list.add(_VodEntry(
+        title: entry.name,
+        logo: entry.logo,
+        group: group.isEmpty ? 'Diğer' : group,
+        series: entry,
+        badge: '${entry.episodeCount} bölüm',
+      ));
     }
-    final list = values.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
 
-  bool _matchesQuery(String name) {
+  List<_VodEntry> _filtered() {
+    final all = _entries();
     final folded = _foldText(_query.trim());
-    if (folded.isEmpty) return true;
-    return _foldText(name).contains(folded);
+    if (folded.isEmpty) return all;
+    return all
+        .where((entry) => _foldText(entry.title).contains(folded))
+        .toList();
   }
 
-  List<MediaItem> _filteredMovies() {
-    return widget.movies.where((item) {
-      if (_group != null && item.groupTitle.trim() != _group) return false;
-      return _matchesQuery(item.name);
-    }).toList();
-  }
-
-  List<SeriesItem> _filteredSeries() {
-    return widget.series.where((item) {
-      if (_group != null && item.groupTitle.trim() != _group) return false;
-      return _matchesQuery(item.name);
-    }).toList();
+  List<_VodRow> _rows(List<_VodEntry> entries) {
+    final rows = <_VodRow>[];
+    if (entries.isEmpty) return rows;
+    final newest = entries.length > 20 ? entries.sublist(0, 20) : entries;
+    rows.add(_VodRow(title: 'Yeni Eklenenler', entries: newest));
+    final buckets = <String, List<_VodEntry>>{};
+    for (final entry in entries) {
+      buckets.putIfAbsent(entry.group, () => <_VodEntry>[]).add(entry);
+    }
+    final groups = buckets.keys.toList()
+      ..sort((a, b) {
+        final diff = buckets[b]!.length.compareTo(buckets[a]!.length);
+        if (diff != 0) return diff;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    for (final group in groups) {
+      rows.add(_VodRow(title: group, entries: buckets[group]!));
+    }
+    return rows;
   }
 
   @override
@@ -91,9 +151,8 @@ class _VodGridScreenState extends State<VodGridScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _buildHeader(),
-        _buildFilters(),
         _buildSearchField(),
-        Expanded(child: _buildGrid()),
+        Expanded(child: _buildBody()),
       ],
     );
 
@@ -108,10 +167,8 @@ class _VodGridScreenState extends State<VodGridScreen> {
   }
 
   Widget _buildHeader() {
-    final count = widget.series.isNotEmpty
-        ? widget.series.length
-        : widget.movies.length;
-    final label = widget.series.isNotEmpty
+    final count = _entries().length;
+    final label = widget.series.isNotEmpty && widget.movies.isEmpty
         ? '$count dizi'
         : '$count içerik';
     return Padding(
@@ -158,46 +215,15 @@ class _VodGridScreenState extends State<VodGridScreen> {
     );
   }
 
-  Widget _buildFilters() {
-    final groups = _groups();
-    if (groups.isEmpty) {
-      return const SizedBox(height: 8);
-    }
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 4),
-        itemCount: groups.length + 1,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _FilterChip(
-              label: 'Tümü',
-              selected: _group == null,
-              onTap: () {
-                setState(() {
-                  _group = null;
-                });
-              },
-            );
-          }
-          final group = groups[index - 1];
-          return _FilterChip(
-            label: group,
-            selected: _group == group,
-            onTap: () {
-              setState(() {
-                _group = group;
-              });
-            },
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildSearchField() {
+    final String hint;
+    if (widget.series.isNotEmpty && widget.movies.isEmpty) {
+      hint = 'Dizi ara';
+    } else if (widget.movies.isNotEmpty && widget.series.isEmpty) {
+      hint = 'Film ara';
+    } else {
+      hint = 'Film veya dizi ara';
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
       child: TextField(
@@ -209,7 +235,7 @@ class _VodGridScreenState extends State<VodGridScreen> {
           });
         },
         decoration: InputDecoration(
-          hintText: widget.series.isNotEmpty ? 'Dizi ara' : 'Film ara',
+          hintText: hint,
           prefixIcon: const Icon(Icons.search_rounded),
           suffixIcon: _query.isEmpty
               ? null
@@ -227,69 +253,384 @@ class _VodGridScreenState extends State<VodGridScreen> {
     );
   }
 
-  Widget _buildGrid() {
-    if (widget.series.isNotEmpty) {
-      final items = _filteredSeries();
-      if (items.isEmpty) {
-        return const _EmptyGrid(message: 'Dizi bulunamadı.');
+  Widget _buildBody() {
+    final entries = _filtered();
+    if (entries.isEmpty) {
+      final String message;
+      if (_query.trim().isNotEmpty) {
+        message = 'Aramanızla eşleşen içerik bulunamadı.';
+      } else if (widget.series.isNotEmpty) {
+        message = 'Dizi bulunamadı.';
+      } else {
+        message = 'Film bulunamadı.';
       }
-      return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
+      return _EmptyGrid(message: message);
+    }
+    if (_query.trim().isNotEmpty) {
+      return _buildSearchGrid(entries);
+    }
+    return _buildRows(entries);
+  }
+
+  Widget _buildSearchGrid(List<_VodEntry> entries) {
+    return FocusTraversalGroup(
+      policy: ReadingOrderTraversalPolicy(),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 170,
           childAspectRatio: 2 / 3,
           crossAxisSpacing: 14,
           mainAxisSpacing: 14,
         ),
-        itemCount: items.length,
+        itemCount: entries.length,
         itemBuilder: (context, index) {
-          final entry = items[index];
-          return _GridCard(
-            title: entry.name,
-            subtitle: '${entry.episodeCount} bölüm',
+          final entry = entries[index];
+          return PosterCard(
+            title: entry.title,
             imageUrl: entry.logo,
-            icon: Icons.tv_rounded,
+            badge: entry.badge,
             onTap: () {
+              _openEntry(context, entry);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildRows(List<_VodEntry> entries) {
+    final rows = _rows(entries);
+    return FocusTraversalGroup(
+      policy: ReadingOrderTraversalPolicy(),
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 4, bottom: 32),
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          return _CategoryRow(
+            row: row,
+            onOpenAll: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (context) => SeriesDetailScreen(series: entry),
+                  builder: (context) => _CategoryGridPage(
+                    title: row.title,
+                    entries: row.entries,
+                  ),
                 ),
               );
             },
           );
         },
-      );
-    }
-
-    final items = _filteredMovies();
-    if (items.isEmpty) {
-      return const _EmptyGrid(message: 'Film bulunamadı.');
-    }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 170,
-        childAspectRatio: 2 / 3,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
       ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _GridCard(
-          title: item.name,
-          subtitle: item.groupTitle.isEmpty ? 'Film' : item.groupTitle,
-          imageUrl: item.logo,
-          icon: Icons.movie_rounded,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (context) => VodPlayerScreen(item: item),
+    );
+  }
+}
+
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({required this.row, required this.onOpenAll});
+
+  final _VodRow row;
+  final VoidCallback onOpenAll;
+
+  static const double _cardWidth = 150;
+  static const double _cardHeight = 225;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = row.entries.length;
+    final visible = total > 60 ? row.entries.sublist(0, 60) : row.entries;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 18, 28, 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  row.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            );
-          },
-        );
+              const SizedBox(width: 12),
+              Text(
+                '$total içerik',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF8A8A9B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: _cardHeight * 1.1 + 20,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+            itemCount: visible.length + 1,
+            itemBuilder: (context, index) {
+              if (index == visible.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: _cardWidth,
+                      height: _cardHeight,
+                      child: _SeeAllCard(
+                        label: 'Tümünü gör ($total)',
+                        onTap: onOpenAll,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              final entry = visible[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: _cardWidth,
+                    height: _cardHeight,
+                    child: PosterCard(
+                      title: entry.title,
+                      imageUrl: entry.logo,
+                      badge: entry.badge,
+                      onTap: () {
+                        _openEntry(context, entry);
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SeeAllCard extends StatefulWidget {
+  const _SeeAllCard({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_SeeAllCard> createState() => _SeeAllCardState();
+}
+
+class _SeeAllCardState extends State<_SeeAllCard> {
+  final FocusNode _node = FocusNode(debugLabel: 'see-all-card');
+  bool _focused = false;
+  bool _hovered = false;
+
+  bool get _active => _focused || _hovered;
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  void _revealCard() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusableActionDetector(
+      focusNode: _node,
+      onShowFocusHighlight: (value) {
+        if (_focused == value) return;
+        setState(() {
+          _focused = value;
+        });
+        if (value) {
+          _revealCard();
+        }
       },
+      shortcuts: const <ShortcutActivator, Intent>{},
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (event) {
+          if (_hovered) return;
+          setState(() {
+            _hovered = true;
+          });
+        },
+        onExit: (event) {
+          if (!_hovered) return;
+          setState(() {
+            _hovered = false;
+          });
+        },
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedScale(
+            scale: _active ? 1.06 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _active ? kNeonSurfaceHigh : kNeonSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _active ? kNeonCyan : kNeonBorder,
+                  width: _active ? 2.5 : 1,
+                ),
+                boxShadow: _active
+                    ? const <BoxShadow>[
+                        BoxShadow(
+                          color: kNeonCyanGlow,
+                          blurRadius: 22,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : const <BoxShadow>[],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Icon(
+                    Icons.grid_view_rounded,
+                    size: 26,
+                    color: _active ? kNeonCyan : const Color(0xFF8A8A9B),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _active ? Colors.white : const Color(0xFFB9B9C9),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryGridPage extends StatelessWidget {
+  const _CategoryGridPage({required this.title, required this.entries});
+
+  final String title;
+  final List<_VodEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kNeonBackground,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 12),
+              child: Row(
+                children: <Widget>[
+                  _BackButton(
+                    onTap: () {
+                      Navigator.of(context).maybePop();
+                    },
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${entries.length} içerik',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF8A8A9B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: FocusTraversalGroup(
+                policy: ReadingOrderTraversalPolicy(),
+                child: GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
+                  gridDelegate:
+                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 170,
+                    childAspectRatio: 2 / 3,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                  ),
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    final entry = entries[index];
+                    return PosterCard(
+                      title: entry.title,
+                      imageUrl: entry.logo,
+                      badge: entry.badge,
+                      onTap: () {
+                        _openEntry(context, entry);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -376,301 +717,6 @@ class _BackButtonState extends State<_BackButton> {
               Icons.arrow_back_rounded,
               size: 20,
               color: _active ? kNeonCyan : Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatefulWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  State<_FilterChip> createState() => _FilterChipState();
-}
-
-class _FilterChipState extends State<_FilterChip> {
-  final FocusNode _node = FocusNode(debugLabel: 'filter-chip');
-  bool _focused = false;
-  bool _hovered = false;
-
-  bool get _active => _focused || _hovered;
-
-  @override
-  void dispose() {
-    _node.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color foreground = widget.selected
-        ? kNeonCyan
-        : (_active ? Colors.white : const Color(0xFFB9B9C9));
-    return FocusableActionDetector(
-      focusNode: _node,
-      onShowFocusHighlight: (value) {
-        if (_focused == value) return;
-        setState(() {
-          _focused = value;
-        });
-      },
-      shortcuts: const <ShortcutActivator, Intent>{},
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            widget.onTap();
-            return null;
-          },
-        ),
-      },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (event) {
-          if (_hovered) return;
-          setState(() {
-            _hovered = true;
-          });
-        },
-        onExit: (event) {
-          if (!_hovered) return;
-          setState(() {
-            _hovered = false;
-          });
-        },
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: widget.selected ? kNeonCyanSoft : kNeonSurface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _active
-                    ? kNeonCyan
-                    : (widget.selected ? kNeonCyan : kNeonBorder),
-                width: _active ? 2 : 1,
-              ),
-              boxShadow: _active
-                  ? const <BoxShadow>[
-                      BoxShadow(
-                        color: kNeonCyanGlow,
-                        blurRadius: 12,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : const <BoxShadow>[],
-            ),
-            child: Text(
-              widget.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight:
-                    widget.selected ? FontWeight.w700 : FontWeight.w500,
-                color: foreground,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GridCard extends StatefulWidget {
-  const _GridCard({
-    required this.title,
-    required this.subtitle,
-    required this.imageUrl,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final String imageUrl;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  State<_GridCard> createState() => _GridCardState();
-}
-
-class _GridCardState extends State<_GridCard> {
-  final FocusNode _node = FocusNode(debugLabel: 'grid-card');
-  bool _focused = false;
-  bool _hovered = false;
-
-  bool get _active => _focused || _hovered;
-
-  @override
-  void dispose() {
-    _node.dispose();
-    super.dispose();
-  }
-
-  Widget _placeholder() {
-    return Container(
-      color: kNeonSurfaceHigh,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(widget.icon, color: const Color(0xFF4A4A5E), size: 32),
-          const SizedBox(height: 8),
-          Text(
-            widget.title,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF8A8A9B)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FocusableActionDetector(
-      focusNode: _node,
-      onShowFocusHighlight: (value) {
-        if (_focused == value) return;
-        setState(() {
-          _focused = value;
-        });
-      },
-      shortcuts: const <ShortcutActivator, Intent>{},
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            widget.onTap();
-            return null;
-          },
-        ),
-      },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (event) {
-          if (_hovered) return;
-          setState(() {
-            _hovered = true;
-          });
-        },
-        onExit: (event) {
-          if (!_hovered) return;
-          setState(() {
-            _hovered = false;
-          });
-        },
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedScale(
-            scale: _active ? 1.08 : 1.0,
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              decoration: BoxDecoration(
-                color: kNeonSurface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: _active ? kNeonCyan : kNeonBorder,
-                  width: _active ? 2 : 1,
-                ),
-                boxShadow: _active
-                    ? const <BoxShadow>[
-                        BoxShadow(
-                          color: kNeonCyanGlow,
-                          blurRadius: 20,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : const <BoxShadow>[],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(13),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    if (widget.imageUrl.isEmpty)
-                      _placeholder()
-                    else
-                      CachedNetworkImage(
-                        imageUrl: widget.imageUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (context, value) => Container(
-                          color: kNeonSurfaceHigh,
-                          alignment: Alignment.center,
-                          child: const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                        errorWidget: (context, value, error) => _placeholder(),
-                      ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(10, 26, 10, 10),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: <Color>[
-                              Color(0x00000000),
-                              Color(0xE6000000),
-                            ],
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              widget.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFFB9B9C9),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),
