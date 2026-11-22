@@ -20,6 +20,7 @@ class StorageService {
   static const String _keyUsername = 'xtream_username';
   static const String _keyPassword = 'xtream_password';
   static const String _keyFavorites = 'favorites';
+  static const String _keyRecentChannels = 'recent_channels';
   static const String _keyProgress = 'progress';
   static const String _keyPin = 'parental_pin';
   static const String _keyHideAdult = 'hide_adult';
@@ -29,11 +30,13 @@ class StorageService {
 
   SharedPreferences? _prefs;
   List<MediaItem> _favorites = <MediaItem>[];
+  List<MediaItem> _recentChannels = <MediaItem>[];
   List<WatchProgress> _progress = <WatchProgress>[];
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
     _loadFavorites();
+    _loadRecentChannels();
     _loadProgress();
     changes.value = changes.value + 1;
   }
@@ -192,6 +195,53 @@ class StorageService {
       _favorites.map((item) => item.toJson()).toList(),
     );
     await prefs.setString(_keyFavorites, encoded);
+  }
+
+  List<MediaItem> get recentChannels =>
+      List<MediaItem>.unmodifiable(_recentChannels);
+
+  Future<void> addRecentChannel(MediaItem item) async {
+    _recentChannels.removeWhere((entry) => entry.id == item.id);
+    _recentChannels.insert(0, item);
+    if (_recentChannels.length > 10) {
+      _recentChannels = _recentChannels.sublist(0, 10);
+    }
+    await _persistRecentChannels();
+    changes.value = changes.value + 1;
+  }
+
+  void _loadRecentChannels() {
+    final raw = _store?.getString(_keyRecentChannels);
+    if (raw == null || raw.isEmpty) {
+      _recentChannels = <MediaItem>[];
+      return;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        final items = <MediaItem>[];
+        for (final entry in decoded) {
+          if (entry is Map) {
+            items.add(MediaItem.fromJson(Map<String, dynamic>.from(entry)));
+          }
+        }
+        _recentChannels = items.length > 10 ? items.sublist(0, 10) : items;
+        return;
+      }
+    } catch (_) {
+      _recentChannels = <MediaItem>[];
+      return;
+    }
+    _recentChannels = <MediaItem>[];
+  }
+
+  Future<void> _persistRecentChannels() async {
+    final prefs = _store;
+    if (prefs == null) return;
+    final encoded = jsonEncode(
+      _recentChannels.map((item) => item.toJson()).toList(),
+    );
+    await prefs.setString(_keyRecentChannels, encoded);
   }
 
   Future<void> saveProgress(

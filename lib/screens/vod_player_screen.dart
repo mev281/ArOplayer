@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../main.dart';
 import '../models/media_item.dart';
 import '../services/storage_service.dart';
+import '../widgets/track_picker.dart';
 
 class VodPlayerScreen extends StatefulWidget {
   const VodPlayerScreen({
@@ -29,6 +30,8 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   late final Player _player;
   late final VideoController _controller;
   final FocusNode _focusNode = FocusNode(debugLabel: 'vod-player');
+  final FocusNode _audioFocus = FocusNode(debugLabel: 'vod-audio');
+  final FocusNode _subtitleFocus = FocusNode(debugLabel: 'vod-subtitle');
 
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
@@ -71,6 +74,9 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
       setState(() {
         _playing = value;
       });
+      if (!value) {
+        _saveProgress();
+      }
     });
     _completedSub = _player.stream.completed.listen((value) {
       if (value) {
@@ -92,6 +98,8 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
     _playingSub?.cancel();
     _completedSub?.cancel();
     _focusNode.dispose();
+    _audioFocus.dispose();
+    _subtitleFocus.dispose();
     _player.dispose();
     super.dispose();
   }
@@ -138,9 +146,25 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
     _player.playOrPause();
   }
 
+  Future<void> _openAudioPicker() async {
+    await showAudioPicker(context, _player);
+    if (!mounted) return;
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _openSubtitlePicker() async {
+    await showSubtitlePicker(context, _player);
+    if (!mounted) return;
+    _focusNode.requestFocus();
+  }
+
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowUp) {
+      _audioFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowLeft) {
       _seekBy(const Duration(seconds: -10));
       return KeyEventResult.handled;
@@ -390,6 +414,24 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
                     _seekBy(const Duration(seconds: 10));
                   },
                 ),
+                const SizedBox(width: 22),
+                _ControlButton(
+                  icon: Icons.audiotrack_rounded,
+                  tooltip: 'Ses Dili',
+                  focusNode: _audioFocus,
+                  onTap: () {
+                    _openAudioPicker();
+                  },
+                ),
+                const SizedBox(width: 12),
+                _ControlButton(
+                  icon: Icons.subtitles_rounded,
+                  tooltip: 'Altyazı',
+                  focusNode: _subtitleFocus,
+                  onTap: () {
+                    _openSubtitlePicker();
+                  },
+                ),
               ],
             ),
           ],
@@ -405,12 +447,14 @@ class _ControlButton extends StatefulWidget {
     required this.tooltip,
     required this.onTap,
     this.large = false,
+    this.focusNode,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final bool large;
+  final FocusNode? focusNode;
 
   @override
   State<_ControlButton> createState() => _ControlButtonState();
@@ -418,55 +462,76 @@ class _ControlButton extends StatefulWidget {
 
 class _ControlButtonState extends State<_ControlButton> {
   bool _hovered = false;
+  bool _focused = false;
+
+  bool get _active => _hovered || _focused;
 
   @override
   Widget build(BuildContext context) {
     final double size = widget.large ? 60 : 44;
     return Tooltip(
       message: widget.tooltip,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (event) {
-          if (_hovered) return;
+      child: FocusableActionDetector(
+        focusNode: widget.focusNode,
+        onShowFocusHighlight: (value) {
+          if (_focused == value) return;
           setState(() {
-            _hovered = true;
+            _focused = value;
           });
         },
-        onExit: (event) {
-          if (!_hovered) return;
-          setState(() {
-            _hovered = false;
-          });
+        shortcuts: const <ShortcutActivator, Intent>{},
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent intent) {
+              widget.onTap();
+              return null;
+            },
+          ),
         },
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: _hovered
-                  ? kNeonCyanSoft
-                  : Colors.black.withOpacity(0.45),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _hovered ? kNeonCyan : const Color(0x33FFFFFF),
-                width: _hovered ? 2 : 1,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (event) {
+            if (_hovered) return;
+            setState(() {
+              _hovered = true;
+            });
+          },
+          onExit: (event) {
+            if (!_hovered) return;
+            setState(() {
+              _hovered = false;
+            });
+          },
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: _active
+                    ? kNeonCyanSoft
+                    : Colors.black.withOpacity(0.45),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _active ? kNeonCyan : const Color(0x33FFFFFF),
+                  width: _active ? 2 : 1,
+                ),
+                boxShadow: _active
+                    ? const <BoxShadow>[
+                        BoxShadow(
+                          color: kNeonCyanGlow,
+                          blurRadius: 16,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : const <BoxShadow>[],
               ),
-              boxShadow: _hovered
-                  ? const <BoxShadow>[
-                      BoxShadow(
-                        color: kNeonCyanGlow,
-                        blurRadius: 16,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : const <BoxShadow>[],
-            ),
-            child: Icon(
-              widget.icon,
-              size: widget.large ? 32 : 22,
-              color: _hovered ? kNeonCyan : Colors.white,
+              child: Icon(
+                widget.icon,
+                size: widget.large ? 32 : 22,
+                color: _active ? kNeonCyan : Colors.white,
+              ),
             ),
           ),
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/storage_service.dart';
 import '../widgets/poster_card.dart';
 import 'series_detail_screen.dart';
 import 'vod_player_screen.dart';
@@ -41,6 +42,18 @@ class _VodRow {
 
   final String title;
   final List<_VodEntry> entries;
+}
+
+class _EpisodeRef {
+  const _EpisodeRef({
+    required this.series,
+    required this.season,
+    required this.episode,
+  });
+
+  final SeriesItem series;
+  final int season;
+  final MediaItem episode;
 }
 
 void _openEntry(BuildContext context, _VodEntry entry) {
@@ -86,9 +99,81 @@ class _VodGridScreenState extends State<VodGridScreen> {
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    StorageService.instance.changes.addListener(_onStorageChanged);
+  }
+
+  void _onStorageChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    StorageService.instance.changes.removeListener(_onStorageChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  Map<String, _EpisodeRef> _episodeIndex() {
+    final index = <String, _EpisodeRef>{};
+    for (final series in widget.series) {
+      for (final entry in series.seasons.entries) {
+        for (final episode in entry.value) {
+          index[episode.id] = _EpisodeRef(
+            series: series,
+            season: entry.key,
+            episode: episode,
+          );
+        }
+      }
+    }
+    return index;
+  }
+
+  List<WatchProgress> _continueEntries() {
+    final movieIds = <String>{};
+    for (final movie in widget.movies) {
+      movieIds.add(movie.id);
+    }
+    final episodes = _episodeIndex();
+    final result = <WatchProgress>[];
+    for (final progress in StorageService.instance.continueWatching()) {
+      final id = progress.item.id;
+      if (!movieIds.contains(id) && !episodes.containsKey(id)) continue;
+      result.add(progress);
+      if (result.length >= 20) break;
+    }
+    return result;
+  }
+
+  void _openContinue(WatchProgress progress) {
+    final startAt = Duration(seconds: progress.positionSec);
+    for (final movie in widget.movies) {
+      if (movie.id != progress.item.id) continue;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => VodPlayerScreen(
+            item: movie,
+            startAt: startAt,
+          ),
+        ),
+      );
+      return;
+    }
+    final ref = _episodeIndex()[progress.item.id];
+    if (ref == null) return;
+    final playlist = ref.series.seasons[ref.season] ?? const <MediaItem>[];
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => VodPlayerScreen(
+          item: ref.episode,
+          startAt: startAt,
+          playlist: playlist,
+        ),
+      ),
+    );
   }
 
   List<_VodEntry> _entries() {
@@ -152,6 +237,7 @@ class _VodGridScreenState extends State<VodGridScreen> {
       children: <Widget>[
         _buildHeader(),
         _buildSearchField(),
+        if (_query.trim().isEmpty) _buildContinueRow(),
         Expanded(child: _buildBody()),
       ],
     );
@@ -250,6 +336,58 @@ class _VodGridScreenState extends State<VodGridScreen> {
                 ),
         ),
       ),
+    );
+  }
+
+  Widget _buildContinueRow() {
+    final entries = _continueEntries();
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Padding(
+          padding: EdgeInsets.fromLTRB(28, 4, 28, 8),
+          child: Text(
+            'İzlemeye Devam Et',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 225 * 1.1 + 20,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+            itemCount: entries.length,
+            itemBuilder: (context, index) {
+              final progress = entries[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 150,
+                    height: 225,
+                    child: PosterCard(
+                      title: progress.item.name,
+                      imageUrl: progress.item.logo,
+                      progress: progress.fraction,
+                      onTap: () {
+                        _openContinue(progress);
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

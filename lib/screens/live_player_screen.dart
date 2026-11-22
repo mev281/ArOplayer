@@ -11,6 +11,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../main.dart';
 import '../models/media_item.dart';
 import '../services/storage_service.dart';
+import '../widgets/track_picker.dart';
 
 const String _kAllCountries = 'Tümü';
 const String _kAllChannels = 'Tüm Kanallar';
@@ -62,24 +63,34 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   final FocusNode _playerFocus = FocusNode(debugLabel: 'live-player');
   final FocusNode _prevFocus = FocusNode(debugLabel: 'live-prev');
   final FocusNode _nextFocus = FocusNode(debugLabel: 'live-next');
+  final FocusNode _audioFocus = FocusNode(debugLabel: 'live-audio');
+  final FocusNode _subtitleFocus = FocusNode(debugLabel: 'live-subtitle');
   final TextEditingController _searchController = TextEditingController();
   final Map<String, FocusNode> _rowNodes = <String, FocusNode>{};
 
   StreamSubscription<bool>? _bufferingSub;
   StreamSubscription<String>? _errorSub;
+  StreamSubscription<bool>? _completedSub;
+  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<Duration>? _positionSub;
   Timer? _barTimer;
   Timer? _clockTimer;
+  Timer? _reconnectTimer;
+  Timer? _bufferWatchTimer;
 
   MediaItem? _current;
   bool _fullscreen = false;
   bool _barOpen = false;
   bool _buffering = false;
-  bool _failed = false;
+  bool _reconnecting = false;
+  int _reconnectAttempt = 0;
+  Duration _lastPosition = Duration.zero;
   String _clockText = '';
 
   int _level = 1;
   String _country = _kAllCountries;
   bool _favoritesOnly = false;
+  bool _recentOnly = false;
   String _searchQuery = '';
   String? _selectedKey;
 
@@ -89,6 +100,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   final Map<String, int> _subCounts = <String, int>{};
   List<MediaItem> _channelList = <MediaItem>[];
   List<MediaItem> _favoriteChannels = <MediaItem>[];
+  List<MediaItem> _recentChannels = <MediaItem>[];
   List<MediaItem> _searchResults = <MediaItem>[];
   List<MediaItem> _activeList = <MediaItem>[];
 
@@ -105,9 +117,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _controller = VideoController(_player);
     _bufferingSub = _player.stream.buffering.listen(_onBuffering);
     _errorSub = _player.stream.error.listen(_onPlayerError);
+    _completedSub = _player.stream.completed.listen(_onCompleted);
+    _playingSub = _player.stream.playing.listen(_onPlaying);
+    _positionSub = _player.stream.position.listen(_onPosition);
     _buildIndex();
     _refreshSubs();
     _refreshFavorites();
+    _refreshRecent();
     _clockText = _formatClock(DateTime.now());
     _clockTimer = Timer.periodic(const Duration(seconds: 1), _tickClock);
     final channels = _channels;
@@ -115,6 +131,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       final initial = widget.initialChannel ?? channels.first;
       _current = initial;
       _player.open(Media(initial.url, httpHeaders: initial.httpHeaders));
+      StorageService.instance.addRecentChannel(initial);
     }
     StorageService.instance.changes.addListener(_onStorageChanged);
     _focusFirstRow();
@@ -125,13 +142,20 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     StorageService.instance.changes.removeListener(_onStorageChanged);
     _barTimer?.cancel();
     _clockTimer?.cancel();
+    _reconnectTimer?.cancel();
+    _bufferWatchTimer?.cancel();
     _bufferingSub?.cancel();
     _errorSub?.cancel();
+    _completedSub?.cancel();
+    _playingSub?.cancel();
+    _positionSub?.cancel();
     _searchController.dispose();
     _rootFocus.dispose();
     _playerFocus.dispose();
     _prevFocus.dispose();
     _nextFocus.dispose();
+    _audioFocus.dispose();
+    _subtitleFocus.dispose();
     for (final node in _rowNodes.values) {
       node.dispose();
     }
@@ -141,7 +165,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   }
 
   void _onBuffering(bool value) {
-    if (!mounted || _buffering == value) return;
+    if (!mounted) return;
+    if (value) {
+      _startBufferWatch();
+    } else {
+      _bufferWatchTimer?.cancel();
+      _bufferWatchTimer = null;
+    }
+    if (_buffering == value) return;
     setState(() {
       _buffering = value;
     });
@@ -149,17 +180,89 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   void _onPlayerError(String value) {
     if (!mounted) return;
-    setState(() {
-      _failed = true;
-      _buffering = false;
-    });
+    _scheduleReconnect();
+  }
+
+  void _onCompleted(bool value) {
+    if (!mounted || !value) return;
+    _scheduleReconnect();
+  }
+
+  void _onPlaying(bool value) {
+    if (!mounted || !value) return;
+    if (_buffering) return;
+    _markHealthy();
+  }
+
+  void _onPosition(Duration value) {
+    if (!mounted) return;
+    if (!_reconnecting) {
+      _lastPosition = value;
+      return;
+    }
+    if (value <= _lastPosition) return;
+    _lastPosition = value;
+    _markHealthy();
   }
 
   void _onStorageChanged() {
     if (!mounted) return;
     setState(() {
       _refreshFavorites();
+      _refreshRecent();
     });
+  }
+
+  void _startBufferWatch() {
+    _bufferWatchTimer?.cancel();
+    _bufferWatchTimer = Timer(const Duration(seconds: 12), () {
+      _bufferWatchTimer = null;
+      if (!mounted) return;
+      _scheduleReconnect();
+    });
+  }
+
+  void _markHealthy() {
+    if (!_reconnecting && _reconnectTimer == null) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _bufferWatchTimer?.cancel();
+    _bufferWatchTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _reconnecting = false;
+      _reconnectAttempt = 0;
+    });
+  }
+
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    if (_current == null) return;
+    if (_reconnectTimer != null) return;
+    _bufferWatchTimer?.cancel();
+    _bufferWatchTimer = null;
+    _reconnectAttempt += 1;
+    final delay = Duration(seconds: math.min(2 * _reconnectAttempt, 10));
+    setState(() {
+      _reconnecting = true;
+      _buffering = false;
+    });
+    _reconnectTimer = Timer(delay, () {
+      _reconnectTimer = null;
+      if (!mounted) return;
+      final current = _current;
+      if (current == null) return;
+      _player.open(Media(current.url, httpHeaders: current.httpHeaders));
+    });
+  }
+
+  void _cancelReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _bufferWatchTimer?.cancel();
+    _bufferWatchTimer = null;
+    _reconnectAttempt = 0;
+    _reconnecting = false;
   }
 
   void _tickClock(Timer timer) {
@@ -251,6 +354,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _favoriteChannels = list;
   }
 
+  void _refreshRecent() {
+    final list = <MediaItem>[];
+    for (final item in StorageService.instance.recentChannels) {
+      if (item.type == MediaType.live) list.add(item);
+    }
+    _recentChannels = list;
+  }
+
   FocusNode _nodeFor(String key) {
     return _rowNodes.putIfAbsent(key, () => FocusNode(debugLabel: key));
   }
@@ -259,6 +370,10 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (_searchQuery.isNotEmpty) {
       if (_searchResults.isEmpty) return null;
       return 'search-${_searchResults.first.id}';
+    }
+    if (_recentOnly) {
+      if (_recentChannels.isEmpty) return null;
+      return 'recent-${_recentChannels.first.id}';
     }
     if (_favoritesOnly) {
       if (_favoriteChannels.isEmpty) return null;
@@ -296,11 +411,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   }
 
   void _playChannel(MediaItem item) {
+    _cancelReconnect();
+    _lastPosition = Duration.zero;
     setState(() {
       _current = item;
-      _failed = false;
+      _reconnecting = false;
     });
     _player.open(Media(item.url, httpHeaders: item.httpHeaders));
+    StorageService.instance.addRecentChannel(item);
   }
 
   void _onChannelTap(MediaItem item) {
@@ -381,6 +499,22 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     }
   }
 
+  Future<void> _openAudioPicker() async {
+    _barTimer?.cancel();
+    await showAudioPicker(context, _player);
+    if (!mounted) return;
+    _openBar();
+    _rootFocus.requestFocus();
+  }
+
+  Future<void> _openSubtitlePicker() async {
+    _barTimer?.cancel();
+    await showSubtitlePicker(context, _player);
+    if (!mounted) return;
+    _openBar();
+    _rootFocus.requestFocus();
+  }
+
   bool _handleBack() {
     if (_fullscreen) {
       if (_barOpen) {
@@ -401,6 +535,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     setState(() {
       _country = country;
       _favoritesOnly = false;
+      _recentOnly = false;
       _refreshSubs();
       _level = 2;
     });
@@ -423,7 +558,17 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   void _openFavorites() {
     setState(() {
       _favoritesOnly = true;
+      _recentOnly = false;
       _activeList = _favoriteChannels;
+    });
+    _focusFirstRow();
+  }
+
+  void _openRecent() {
+    setState(() {
+      _recentOnly = true;
+      _favoritesOnly = false;
+      _activeList = _recentChannels;
     });
     _focusFirstRow();
   }
@@ -431,6 +576,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   void _goBackLevel() {
     if (_searchQuery.isNotEmpty) {
       _clearSearch();
+      return;
+    }
+    if (_recentOnly) {
+      setState(() {
+        _recentOnly = false;
+      });
+      _focusFirstRow();
       return;
     }
     if (_favoritesOnly) {
@@ -665,7 +817,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
               controls: NoVideoControls,
               fit: BoxFit.contain,
             ),
-            if (_buffering)
+            if (_buffering && !_reconnecting)
               const Center(
                 child: SizedBox(
                   width: 44,
@@ -676,31 +828,34 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                   ),
                 ),
               ),
-            if (_failed)
+            if (_reconnecting)
               Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 14,
+                    horizontal: 16,
+                    vertical: 10,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.72),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kNeonMagenta.withOpacity(0.7)),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: kNeonBorder),
                   ),
-                  child: const Column(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(
-                        Icons.error_outline_rounded,
-                        size: 30,
-                        color: kNeonMagenta,
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: kNeonCyan,
+                        ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(width: 10),
                       Text(
-                        'Yayın açılamadı',
-                        style: TextStyle(
-                          fontSize: 15,
+                        'Yeniden bağlanılıyor… (deneme $_reconnectAttempt)',
+                        style: const TextStyle(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         ),
@@ -849,6 +1004,24 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                                 ),
                               ),
                               const SizedBox(width: 10),
+                              _BarIconButton(
+                                node: _audioFocus,
+                                label: 'Ses Dili',
+                                icon: Icons.audiotrack_rounded,
+                                onTap: () {
+                                  _openAudioPicker();
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _BarIconButton(
+                                node: _subtitleFocus,
+                                label: 'Altyazı',
+                                icon: Icons.subtitles_rounded,
+                                onTap: () {
+                                  _openSubtitlePicker();
+                                },
+                              ),
+                              const SizedBox(width: 10),
                               _StarButton(
                                 active: StorageService.instance
                                     .isFavorite(item),
@@ -988,6 +1161,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (_searchQuery.isNotEmpty) {
       return _buildChannelList(_searchResults, 'search');
     }
+    if (_recentOnly) {
+      return _buildChannelList(_recentChannels, 'recent');
+    }
     if (_favoritesOnly) {
       return _buildChannelList(_favoriteChannels, 'fav');
     }
@@ -999,9 +1175,29 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   Widget _buildCountries() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _countryList.length + 2,
+      itemCount: _countryList.length + 3,
       itemBuilder: (context, index) {
         if (index == 0) {
+          return _MenuRow(
+            node: _nodeFor('recent'),
+            title: 'Son İzlenenler',
+            subtitle: '${_recentChannels.length} kanal',
+            leading: const Icon(
+              Icons.history_rounded,
+              size: 20,
+              color: kNeonCyan,
+            ),
+            trailing: _CountBadge(count: _recentChannels.length),
+            chevron: true,
+            onTap: _openRecent,
+            onLeft: _goBackLevel,
+            onRight: _focusPlayer,
+            onFocus: () {
+              _selectedKey = 'recent';
+            },
+          );
+        }
+        if (index == 1) {
           return _MenuRow(
             node: _nodeFor('favorites'),
             title: 'Favoriler',
@@ -1021,7 +1217,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
             },
           );
         }
-        if (index == 1) {
+        if (index == 2) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(18, 12, 18, 6),
             child: Text(
@@ -1035,7 +1231,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
             ),
           );
         }
-        final name = _countryList[index - 2];
+        final name = _countryList[index - 3];
         return _MenuRow(
           node: _nodeFor('country-$name'),
           title: name,
@@ -1519,6 +1715,111 @@ class _BarButtonState extends State<_BarButton> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BarIconButton extends StatefulWidget {
+  const _BarIconButton({
+    required this.node,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final FocusNode node;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_BarIconButton> createState() => _BarIconButtonState();
+}
+
+class _BarIconButtonState extends State<_BarIconButton> {
+  bool _focused = false;
+  bool _hovered = false;
+
+  bool get _active => _focused || _hovered;
+
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.gameButtonA) {
+      widget.onTap();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _handleKey,
+      child: FocusableActionDetector(
+        focusNode: widget.node,
+        onShowFocusHighlight: (value) {
+          if (_focused == value) return;
+          setState(() {
+            _focused = value;
+          });
+        },
+        shortcuts: const <ShortcutActivator, Intent>{},
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent intent) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: Tooltip(
+          message: widget.label,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (event) {
+              if (_hovered) return;
+              setState(() {
+                _hovered = true;
+              });
+            },
+            onExit: (event) {
+              if (!_hovered) return;
+              setState(() {
+                _hovered = false;
+              });
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _active ? kNeonCyanSoft : kNeonSurfaceHigh,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _active ? kNeonCyan : kNeonBorder,
+                    width: _active ? 2 : 1,
+                  ),
+                ),
+                child: Icon(
+                  widget.icon,
+                  size: 19,
+                  color: _active ? kNeonCyan : const Color(0xFFB8C4D9),
+                ),
               ),
             ),
           ),
