@@ -94,13 +94,33 @@ class StorageService {
 
   Future<void> clearSource() async {
     final prefs = _store;
-    if (prefs == null) return;
-    await prefs.remove(_keySourceType);
-    await prefs.remove(_keyM3uUrl);
-    await prefs.remove(_keyHost);
-    await prefs.remove(_keyUsername);
-    await prefs.remove(_keyPassword);
+    if (prefs != null) {
+      await prefs.remove(_keySourceType);
+      await prefs.remove(_keyM3uUrl);
+      await prefs.remove(_keyHost);
+      await prefs.remove(_keyUsername);
+      await prefs.remove(_keyPassword);
+      await prefs.remove(_keyFavorites);
+      await prefs.remove(_keyRecentChannels);
+      await prefs.remove(_keyProgress);
+      await prefs.reload();
+    }
+    _favorites = <MediaItem>[];
+    _recentChannels = <MediaItem>[];
+    _progress = <WatchProgress>[];
+    await _deleteCache();
     changes.value = changes.value + 1;
+  }
+
+  Future<void> _deleteCache() async {
+    try {
+      final file = await _cacheFile();
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      return;
+    }
   }
 
   static String xtreamToM3u(String host, String user, String pass) {
@@ -122,10 +142,14 @@ class StorageService {
   }
 
   Future<void> cachePlaylist(String text) async {
+    if (!hasSource) return;
     try {
       final file = await _cacheFile();
       await file.parent.create(recursive: true);
       await file.writeAsString(text, flush: true);
+      if (!hasSource && await file.exists()) {
+        await file.delete();
+      }
     } catch (_) {
       return;
     }

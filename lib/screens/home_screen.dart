@@ -727,7 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: kNeonSurfaceHigh,
         title: const Text('Kaynağı değiştir'),
         content: const Text(
-          'Mevcut kaynak bilgileri silinecek ve kurulum ekranı açılacak. Devam edilsin mi?',
+          'Kayıtlı M3U adresi, kanal listesi önbelleği, favoriler, son izlenenler ve izleme geçmişi tamamen silinecek ve kurulum ekranı açılacak. Devam edilsin mi?',
         ),
         actions: <Widget>[
           TextButton(
