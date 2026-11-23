@@ -35,16 +35,6 @@ jobs:
           sed -i 's/com\.aroplayer\.aroplayer/com.aroplayer.app/g' android/app/build.gradle* || true
           rm -rf android/app/src/main/kotlin/com/aroplayer/aroplayer
 
-      - name: Pin minSdk to 21
-        run: |
-          if [ -f android/app/build.gradle ]; then
-            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdkVersion 21/' android/app/build.gradle
-          fi
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdk = 21/' android/app/build.gradle.kts
-          fi
-          grep -n "minSdk" android/app/build.gradle* || true
-
       - name: Configure release signing
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -93,17 +83,26 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
+      - name: Pin minSdk to 21
+        run: |
+          if [ -f android/app/build.gradle ]; then
+            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdkVersion 21/' android/app/build.gradle
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdk = 21/' android/app/build.gradle.kts
+          fi
+          grep -n "minSdk" android/app/build.gradle* || true
+
       - name: Build APK
         env:
           KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
 
-      - name: Diagnose minSdk
-        if: always()
+      - name: Verify minSdk is 21
         run: |
-          grep -rn "minSdk" android/app/build.gradle* android/build.gradle* android/gradle.properties || true
-          grep -n -i "uses-sdk\|minSdk" build/app/outputs/logs/manifest-merger-release-report.txt | head -20 || true
-          find build/app/intermediates -name AndroidManifest.xml -path "*merged_manifest*" | head -3 | xargs -I{} grep -n "minSdkVersion" {} || true
+          grep -n "minSdk" android/app/build.gradle*
+          M=$(find build/app/intermediates -name AndroidManifest.xml -path "*merged_manifest*" | head -1)
+          grep -n 'minSdkVersion="21"' "$M"
 
       - name: Verify APK has v1 signature
         run: |
