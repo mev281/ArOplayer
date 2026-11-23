@@ -64,6 +64,8 @@ jobs:
                        '            storePassword = System.getenv("KS_PASS")\n'
                        '            keyAlias = "aroplayer"\n'
                        '            keyPassword = System.getenv("KS_PASS")\n'
+                       '            enableV1Signing = true\n'
+                       '            enableV2Signing = true\n'
                        '        }\n    }\n\n')
               s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
               s = s.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")')
@@ -76,6 +78,8 @@ jobs:
                        "            storePassword System.getenv('KS_PASS')\n"
                        "            keyAlias 'aroplayer'\n"
                        "            keyPassword System.getenv('KS_PASS')\n"
+                       "            v1SigningEnabled true\n"
+                       "            v2SigningEnabled true\n"
                        "        }\n    }\n\n")
               s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
               s = s.replace("signingConfigs.debug", "signingConfigs.release")
@@ -93,6 +97,10 @@ jobs:
         env:
           KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
+
+      - name: Verify APK has v1 signature
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E "META-INF/[^/]+\.(RSA|DSA|EC)"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
