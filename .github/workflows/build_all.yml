@@ -98,6 +98,13 @@ jobs:
           KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
 
+      - name: Diagnose minSdk
+        if: always()
+        run: |
+          grep -rn "minSdk" android/app/build.gradle* android/build.gradle* android/gradle.properties || true
+          grep -n -i "uses-sdk\|minSdk" build/app/outputs/logs/manifest-merger-release-report.txt | head -20 || true
+          find build/app/intermediates -name AndroidManifest.xml -path "*merged_manifest*" | head -3 | xargs -I{} grep -n "minSdkVersion" {} || true
+
       - name: Verify APK has v1 signature
         run: |
           unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E "META-INF/[^/]+\.(RSA|DSA|EC)"
