@@ -78,6 +78,10 @@ jobs:
           PY
           grep -n "signingConfig" android/app/build.gradle*
 
+      - name: Pin Android plugin versions for Flutter 3.24
+        run: |
+          printf 'dependency_overrides:\n  screen_brightness_android: 2.1.0\n' > pubspec_overrides.yaml
+
       - name: Install dependencies
         run: flutter pub get
 
