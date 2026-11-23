@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'services/l10n.dart';
 import 'services/m3u_parser.dart';
+import 'services/remote_service.dart';
 import 'services/storage_service.dart';
 
 const Color kNeonCyan = Color(0xFF3B8BFF);
@@ -39,6 +40,7 @@ Future<void> main() async {
     await StorageService.instance.init();
     PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;
     PaintingBinding.instance.imageCache.maximumSize = 300;
+    unawaited(RemoteService.instance.start());
     runApp(const ArOplayerApp());
   }, (error, stack) {});
 }
@@ -227,10 +229,57 @@ class ArOplayerApp extends StatelessWidget {
           builder: (context, child) => ShortcutsActivate(
             child: KeyedSubtree(
               key: ValueKey<String>(lang),
-              child: child ?? const SizedBox.shrink(),
+              child: BlockedGate(child: child ?? const SizedBox.shrink()),
             ),
           ),
           home: const AppLoader(),
+        );
+      },
+    );
+  }
+}
+
+class BlockedGate extends StatelessWidget {
+  const BlockedGate({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: RemoteService.instance.blockedChanges,
+      initialData: RemoteService.instance.blocked,
+      builder: (context, snapshot) {
+        final blocked = snapshot.data ?? false;
+        return Stack(
+          children: [
+            child,
+            if (blocked)
+              Positioned.fill(
+                child: Focus(
+                  autofocus: true,
+                  onKeyEvent: (node, event) => KeyEventResult.handled,
+                  child: const ColoredBox(
+                    color: Colors.black,
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text(
+                          'Bu cihaz yönetici tarafından devre dışı bırakıldı',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );

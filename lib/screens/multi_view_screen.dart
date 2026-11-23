@@ -10,6 +10,7 @@ import '../main.dart';
 import '../models/media_item.dart';
 import '../services/l10n.dart';
 import '../services/player_tuning.dart';
+import '../services/remote_service.dart';
 
 String _foldText(String input) {
   var text = input.replaceAll('\u0130', 'i').replaceAll('I', 'i');
@@ -60,8 +61,10 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
       final player = _players[i];
       _controllers[i] = null;
       _players[i] = null;
+      if (player != null) RemoteService.instance.unregisterPlayer(player);
       player?.dispose();
     }
+    RemoteService.instance.setIdle();
     _rootFocus.dispose();
     super.dispose();
   }
@@ -93,12 +96,14 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
         );
         _players[i] = player;
         _controllers[i] = VideoController(player);
+        RemoteService.instance.registerPlayer(player);
         unawaited(tunePlayer(player, live: true));
       } else if (!needed && _players[i] != null) {
         final player = _players[i];
         _controllers[i] = null;
         _players[i] = null;
         _slots[i] = null;
+        if (player != null) RemoteService.instance.unregisterPlayer(player);
         player?.dispose();
       }
     }
@@ -172,6 +177,9 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
     if (player != null) {
       player.open(Media(selected.url, httpHeaders: selected.httpHeaders));
     }
+    RemoteService.instance.setWatching(
+      'Çoklu: ${_slots.whereType<MediaItem>().map((e) => e.name).join(' | ')}',
+    );
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {

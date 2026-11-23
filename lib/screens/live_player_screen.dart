@@ -15,6 +15,7 @@ import '../services/epg_service.dart';
 import '../services/l10n.dart';
 import '../services/m3u_parser.dart';
 import '../services/player_tuning.dart';
+import '../services/remote_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/track_picker.dart';
 
@@ -124,6 +125,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       ),
     );
     _controller = VideoController(_player);
+    RemoteService.instance.registerPlayer(_player);
     unawaited(tunePlayer(_player, live: true));
     unawaited(_enableWakelock());
     _bufferingSub = _player.stream.buffering.listen(_onBuffering);
@@ -185,6 +187,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       node.dispose();
     }
     _rowNodes.clear();
+    RemoteService.instance.unregisterPlayer(_player);
+    RemoteService.instance.setIdle();
     _player.dispose();
     super.dispose();
   }
@@ -470,6 +474,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       _current = item;
       _reconnecting = false;
     });
+    RemoteService.instance.setWatching(item.name);
     // Önceki yayın durdurulmadan açılır; kanal geçişi bu yüzden hızlıdır.
     await _player.open(
       Media(item.url, httpHeaders: item.httpHeaders),
