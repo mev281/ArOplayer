@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -5,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'models/media_item.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
+import 'services/l10n.dart';
 import 'services/m3u_parser.dart';
 import 'services/storage_service.dart';
 
@@ -20,10 +24,23 @@ const Color kNeonMagentaSoft = Color(0x33E50914);
 const Color kNeonMagentaGlow = Color(0x73E50914);
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-  await StorageService.instance.init();
-  runApp(const ArOplayerApp());
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    FlutterError.onError = (details) {
+      FlutterError.dumpErrorToConsole(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      return true;
+    };
+    ErrorWidget.builder = (details) {
+      return const ColoredBox(color: kNeonBackground);
+    };
+    MediaKit.ensureInitialized();
+    await StorageService.instance.init();
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;
+    PaintingBinding.instance.imageCache.maximumSize = 300;
+    runApp(const ArOplayerApp());
+  }, (error, stack) {});
 }
 
 PlaylistData applyParental(PlaylistData data) {
@@ -200,14 +217,22 @@ class ArOplayerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ArOplayer',
-      debugShowCheckedModeBanner: false,
-      theme: buildNeonTheme(),
-      builder: (context, child) => ShortcutsActivate(
-        child: child ?? const SizedBox.shrink(),
-      ),
-      home: const AppLoader(),
+    return ValueListenableBuilder<String>(
+      valueListenable: L10n.language,
+      builder: (context, lang, child) {
+        return MaterialApp(
+          title: 'ArOplayer',
+          debugShowCheckedModeBanner: false,
+          theme: buildNeonTheme(),
+          builder: (context, child) => ShortcutsActivate(
+            child: KeyedSubtree(
+              key: ValueKey<String>(lang),
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
+          home: const AppLoader(),
+        );
+      },
     );
   }
 }
@@ -296,7 +321,7 @@ class _AppLoaderState extends State<AppLoader> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Kaynak adresi bulunamadı.';
+        _error = t('Kaynak adresi bulunamadı.');
       });
       return;
     }
@@ -314,7 +339,7 @@ class _AppLoaderState extends State<AppLoader> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Liste yüklenemedi: $error';
+        _error = '${t('Liste yüklenemedi')}: $error';
       });
     }
   }
@@ -345,7 +370,7 @@ class _AppLoaderState extends State<AppLoader> {
     final data = _data;
     if (data == null) {
       return _ErrorScreen(
-        message: 'Liste yüklenemedi.',
+        message: t('Liste yüklenemedi.'),
         onRetry: _load,
         onSetup: _openSetup,
       );
@@ -359,18 +384,18 @@ class _LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SizedBox(
+            const SizedBox(
               width: 56,
               height: 56,
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
-            SizedBox(height: 24),
-            Text(
+            const SizedBox(height: 24),
+            const Text(
               'ArOplayer',
               style: TextStyle(
                 fontSize: 26,
@@ -379,10 +404,10 @@ class _LoadingScreen extends StatelessWidget {
                 color: kNeonCyan,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              'Liste yükleniyor...',
-              style: TextStyle(color: Color(0xFF9A9AAB)),
+              t('Liste yükleniyor...'),
+              style: const TextStyle(color: Color(0xFF9A9AAB)),
             ),
           ],
         ),
@@ -419,9 +444,9 @@ class _ErrorScreen extends StatelessWidget {
                   color: kNeonMagenta,
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Bağlantı kurulamadı',
-                  style: TextStyle(
+                Text(
+                  t('Bağlantı kurulamadı'),
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -438,12 +463,12 @@ class _ErrorScreen extends StatelessWidget {
                   onPressed: () {
                     onRetry();
                   },
-                  child: const Text('Yeniden dene'),
+                  child: Text(t('Yeniden dene')),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: onSetup,
-                  child: const Text('Ayarlar / Kaynak değiştir'),
+                  child: Text(t('Ayarlar / Kaynak değiştir')),
                 ),
               ],
             ),

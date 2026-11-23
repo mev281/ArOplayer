@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/media_item.dart';
+import 'l10n.dart';
 
 enum SourceType { m3u, xtream }
 
@@ -24,6 +25,9 @@ class StorageService {
   static const String _keyProgress = 'progress';
   static const String _keyPin = 'parental_pin';
   static const String _keyHideAdult = 'hide_adult';
+  static const String _keyLanguage = 'language';
+  static const String _keyAutoPlayLast = 'auto_play_last';
+  static const String _keyLastChannelId = 'last_channel_id';
   static const String _cacheFileName = 'playlist_cache.m3u';
 
   final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -38,6 +42,7 @@ class StorageService {
     _loadFavorites();
     _loadRecentChannels();
     _loadProgress();
+    L10n.language.value = language;
     changes.value = changes.value + 1;
   }
 
@@ -103,6 +108,7 @@ class StorageService {
       await prefs.remove(_keyFavorites);
       await prefs.remove(_keyRecentChannels);
       await prefs.remove(_keyProgress);
+      await prefs.remove(_keyLastChannelId);
       await prefs.reload();
     }
     _favorites = <MediaItem>[];
@@ -377,5 +383,40 @@ class StorageService {
     final stored = pin;
     if (stored == null) return true;
     return stored == value.trim();
+  }
+
+  String get language {
+    final value = _store?.getString(_keyLanguage);
+    if (value == null || value.isEmpty) return 'tr';
+    return value;
+  }
+
+  Future<void> setLanguage(String value) async {
+    final prefs = _store;
+    if (prefs == null) return;
+    await prefs.setString(_keyLanguage, value);
+    changes.value = changes.value + 1;
+  }
+
+  bool get autoPlayLast => _store?.getBool(_keyAutoPlayLast) ?? false;
+
+  Future<void> setAutoPlayLast(bool value) async {
+    final prefs = _store;
+    if (prefs == null) return;
+    await prefs.setBool(_keyAutoPlayLast, value);
+    changes.value = changes.value + 1;
+  }
+
+  String? get lastChannelId {
+    final value = _store?.getString(_keyLastChannelId);
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  Future<void> setLastChannelId(String id) async {
+    final prefs = _store;
+    if (prefs == null) return;
+    await prefs.setString(_keyLastChannelId, id);
+    changes.value = changes.value + 1;
   }
 }

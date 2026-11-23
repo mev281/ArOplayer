@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../main.dart';
+import '../services/l10n.dart';
 import '../services/storage_service.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -60,7 +61,7 @@ class _SetupScreenState extends State<SetupScreen> {
     final pin = _pinController.text.trim();
 
     if (pin.isNotEmpty && pin.length != 4) {
-      _showMessage('PIN 4 haneli olmalıdır.');
+      _showMessage(t('PIN 4 haneli olmalıdır.'));
       return;
     }
 
@@ -72,11 +73,11 @@ class _SetupScreenState extends State<SetupScreen> {
     if (_type == SourceType.m3u) {
       url = _m3uController.text.trim();
       if (url.isEmpty) {
-        _showMessage('M3U linki boş olamaz.');
+        _showMessage(t('M3U linki boş olamaz.'));
         return;
       }
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        _showMessage('M3U linki http:// veya https:// ile başlamalıdır.');
+        _showMessage(t('M3U linki http:// veya https:// ile başlamalıdır.'));
         return;
       }
     } else {
@@ -84,7 +85,7 @@ class _SetupScreenState extends State<SetupScreen> {
       username = _userController.text.trim();
       password = _passController.text;
       if (host.isEmpty || username.isEmpty || password.isEmpty) {
-        _showMessage('Sunucu adresi, kullanıcı adı ve şifre zorunludur.');
+        _showMessage(t('Sunucu adresi, kullanıcı adı ve şifre zorunludur.'));
         return;
       }
       url = StorageService.xtreamToM3u(host, username, password);
@@ -159,10 +160,10 @@ class _SetupScreenState extends State<SetupScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Kaynak seçin ve yayına başlayın',
+                      Text(
+                        t('Kaynak seçin ve yayına başlayın'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF9A9AAB)),
+                        style: const TextStyle(color: Color(0xFF9A9AAB)),
                       ),
                       const SizedBox(height: 28),
                       Row(
@@ -171,8 +172,8 @@ class _SetupScreenState extends State<SetupScreen> {
                             child: _TypeCard(
                               selected: _type == SourceType.m3u,
                               icon: Icons.link_rounded,
-                              title: 'M3U Linki',
-                              subtitle: 'Hazır liste adresi',
+                              title: t('M3U Linki'),
+                              subtitle: t('Hazır liste adresi'),
                               onTap: () {
                                 setState(() {
                                   _type = SourceType.m3u;
@@ -186,7 +187,7 @@ class _SetupScreenState extends State<SetupScreen> {
                               selected: _type == SourceType.xtream,
                               icon: Icons.dns_rounded,
                               title: 'Xtream Codes',
-                              subtitle: 'Sunucu bilgileri',
+                              subtitle: t('Sunucu bilgileri'),
                               onTap: () {
                                 setState(() {
                                   _type = SourceType.xtream;
@@ -203,10 +204,10 @@ class _SetupScreenState extends State<SetupScreen> {
                             controller: _m3uController,
                             keyboardType: TextInputType.url,
                             textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                              labelText: 'M3U Linki',
+                            decoration: InputDecoration(
+                              labelText: t('M3U Linki'),
                               hintText: 'http://ornek.com/liste.m3u',
-                              prefixIcon: Icon(Icons.link_rounded),
+                              prefixIcon: const Icon(Icons.link_rounded),
                             ),
                           ),
                         )
@@ -219,10 +220,10 @@ class _SetupScreenState extends State<SetupScreen> {
                                 controller: _hostController,
                                 keyboardType: TextInputType.url,
                                 textInputAction: TextInputAction.next,
-                                decoration: const InputDecoration(
-                                  labelText: 'Sunucu URL',
+                                decoration: InputDecoration(
+                                  labelText: t('Sunucu URL'),
                                   hintText: 'http://sunucu.com:8080',
-                                  prefixIcon: Icon(Icons.dns_rounded),
+                                  prefixIcon: const Icon(Icons.dns_rounded),
                                 ),
                               ),
                             ),
@@ -231,9 +232,9 @@ class _SetupScreenState extends State<SetupScreen> {
                               child: TextField(
                                 controller: _userController,
                                 textInputAction: TextInputAction.next,
-                                decoration: const InputDecoration(
-                                  labelText: 'Kullanıcı Adı',
-                                  prefixIcon: Icon(Icons.person_rounded),
+                                decoration: InputDecoration(
+                                  labelText: t('Kullanıcı Adı'),
+                                  prefixIcon: const Icon(Icons.person_rounded),
                                 ),
                               ),
                             ),
@@ -243,9 +244,9 @@ class _SetupScreenState extends State<SetupScreen> {
                                 controller: _passController,
                                 obscureText: true,
                                 textInputAction: TextInputAction.done,
-                                decoration: const InputDecoration(
-                                  labelText: 'Şifre',
-                                  prefixIcon: Icon(Icons.lock_rounded),
+                                decoration: InputDecoration(
+                                  labelText: t('Şifre'),
+                                  prefixIcon: const Icon(Icons.lock_rounded),
                                 ),
                               ),
                             ),
@@ -254,18 +255,20 @@ class _SetupScreenState extends State<SetupScreen> {
                       const SizedBox(height: 28),
                       const Divider(height: 1),
                       const SizedBox(height: 20),
-                      const Text(
-                        'Ebeveyn Kontrolü',
-                        style: TextStyle(
+                      Text(
+                        t('Ebeveyn Kontrolü'),
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Yetişkin kategorilerini gizlemek için 4 haneli PIN belirleyin.',
-                        style: TextStyle(
+                      Text(
+                        t(
+                          'Yetişkin kategorilerini gizlemek için 4 haneli PIN belirleyin.',
+                        ),
+                        style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF8A8A9B),
                         ),
@@ -281,9 +284,9 @@ class _SetupScreenState extends State<SetupScreen> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(4),
                           ],
-                          decoration: const InputDecoration(
-                            labelText: 'PIN (4 hane)',
-                            prefixIcon: Icon(Icons.pin_rounded),
+                          decoration: InputDecoration(
+                            labelText: t('PIN (4 hane)'),
+                            prefixIcon: const Icon(Icons.pin_rounded),
                             counterText: '',
                           ),
                         ),
@@ -300,9 +303,9 @@ class _SetupScreenState extends State<SetupScreen> {
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 8,
                           ),
-                          title: const Text(
-                            'Yetişkin kategorilerini gizle',
-                            style: TextStyle(color: Colors.white),
+                          title: Text(
+                            t('Yetişkin kategorilerini gizle'),
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ),
                       ),
@@ -323,7 +326,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                     color: Colors.black,
                                   ),
                                 )
-                              : const Text('Kaydet ve Başla'),
+                              : Text(t('Kaydet ve Başla')),
                         ),
                       ),
                     ],

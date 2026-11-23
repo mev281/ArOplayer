@@ -591,6 +591,7 @@ PlaylistData parseM3u(String text) {
       subCategory: subCategory,
       userAgent: userAgent,
       referrer: referrer,
+      tvgId: tvgId,
     ));
   }
 
@@ -628,6 +629,9 @@ PlaylistData parseM3u(String text) {
 }
 
 class M3uService {
+  /// #EXTM3U başlığındaki EPG (url-tvg / x-tvg-url) adresleri.
+  static List<String> lastEpgUrls = <String>[];
+
   static Future<String> fetch(String url) async {
     final response = await http
         .get(Uri.parse(url))
@@ -638,5 +642,24 @@ class M3uService {
     return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
-  static Future<PlaylistData> parse(String text) => compute(parseM3u, text);
+  static Future<PlaylistData> parse(String text) async {
+    // compute izolatında static alan paylaşılmadığı için başlık burada ayıklanır.
+    lastEpgUrls = _extractEpgUrls(text);
+    return compute(parseM3u, text);
+  }
+}
+
+/// Ham metnin ilk 2000 karakterinden EPG adreslerini çıkarır.
+List<String> _extractEpgUrls(String text) {
+  final head = text.length > 2000 ? text.substring(0, 2000) : text;
+  final urls = <String>[];
+  final re = RegExp(r'(?:url-tvg|x-tvg-url)\s*=\s*"([^"]*)"');
+  for (final match in re.allMatches(head)) {
+    for (final part in (match.group(1) ?? '').split(',')) {
+      final url = part.trim();
+      if (url.isEmpty) continue;
+      if (!urls.contains(url)) urls.add(url);
+    }
+  }
+  return urls;
 }

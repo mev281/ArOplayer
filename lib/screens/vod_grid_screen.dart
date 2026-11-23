@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/l10n.dart';
 import '../services/storage_service.dart';
 import '../widgets/poster_card.dart';
 import 'series_detail_screen.dart';
@@ -183,7 +184,7 @@ class _VodGridScreenState extends State<VodGridScreen> {
       list.add(_VodEntry(
         title: item.name,
         logo: item.logo,
-        group: group.isEmpty ? 'Diğer' : group,
+        group: group.isEmpty ? t('Diğer') : group,
         movie: item,
       ));
     }
@@ -192,9 +193,9 @@ class _VodGridScreenState extends State<VodGridScreen> {
       list.add(_VodEntry(
         title: entry.name,
         logo: entry.logo,
-        group: group.isEmpty ? 'Diğer' : group,
+        group: group.isEmpty ? t('Diğer') : group,
         series: entry,
-        badge: '${entry.episodeCount} bölüm',
+        badge: t('{n} bölüm').replaceAll('{n}', '${entry.episodeCount}'),
       ));
     }
     return list;
@@ -213,7 +214,7 @@ class _VodGridScreenState extends State<VodGridScreen> {
     final rows = <_VodRow>[];
     if (entries.isEmpty) return rows;
     final newest = entries.length > 20 ? entries.sublist(0, 20) : entries;
-    rows.add(_VodRow(title: 'Yeni Eklenenler', entries: newest));
+    rows.add(_VodRow(title: t('Yeni Eklenenler'), entries: newest));
     final buckets = <String, List<_VodEntry>>{};
     for (final entry in entries) {
       buckets.putIfAbsent(entry.group, () => <_VodEntry>[]).add(entry);
@@ -255,8 +256,8 @@ class _VodGridScreenState extends State<VodGridScreen> {
   Widget _buildHeader() {
     final count = _entries().length;
     final label = widget.series.isNotEmpty && widget.movies.isEmpty
-        ? '$count dizi'
-        : '$count içerik';
+        ? t('{n} dizi').replaceAll('{n}', '$count')
+        : t('{n} içerik').replaceAll('{n}', '$count');
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 8),
       child: Row(
@@ -304,11 +305,11 @@ class _VodGridScreenState extends State<VodGridScreen> {
   Widget _buildSearchField() {
     final String hint;
     if (widget.series.isNotEmpty && widget.movies.isEmpty) {
-      hint = 'Dizi ara';
+      hint = t('Dizi ara');
     } else if (widget.movies.isNotEmpty && widget.series.isEmpty) {
-      hint = 'Film ara';
+      hint = t('Film ara');
     } else {
-      hint = 'Film veya dizi ara';
+      hint = t('Film veya dizi ara');
     }
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
@@ -345,13 +346,13 @@ class _VodGridScreenState extends State<VodGridScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 4, 28, 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
           child: Text(
-            'İzlemeye Devam Et',
+            t('İzlemeye Devam Et'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
@@ -396,11 +397,11 @@ class _VodGridScreenState extends State<VodGridScreen> {
     if (entries.isEmpty) {
       final String message;
       if (_query.trim().isNotEmpty) {
-        message = 'Aramanızla eşleşen içerik bulunamadı.';
+        message = t('Aramanızla eşleşen içerik bulunamadı.');
       } else if (widget.series.isNotEmpty) {
-        message = 'Dizi bulunamadı.';
+        message = t('Dizi bulunamadı.');
       } else {
-        message = 'Film bulunamadı.';
+        message = t('Film bulunamadı.');
       }
       return _EmptyGrid(message: message);
     }
@@ -500,7 +501,7 @@ class _CategoryRow extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                '$total içerik',
+                t('{n} içerik').replaceAll('{n}', '$total'),
                 style: const TextStyle(
                   fontSize: 11,
                   color: Color(0xFF8A8A9B),
@@ -524,7 +525,8 @@ class _CategoryRow extends StatelessWidget {
                       width: _cardWidth,
                       height: _cardHeight,
                       child: _SeeAllCard(
-                        label: 'Tümünü gör ($total)',
+                        label: t('Tümünü gör ({n})')
+                            .replaceAll('{n}', '$total'),
                         onTap: onOpenAll,
                       ),
                     ),
@@ -727,7 +729,8 @@ class _CategoryGridPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${entries.length} içerik',
+                          t('{n} içerik')
+                              .replaceAll('{n}', '${entries.length}'),
                           style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF8A8A9B),

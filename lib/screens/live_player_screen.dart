@@ -7,9 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/epg_service.dart';
+import '../services/l10n.dart';
+import '../services/m3u_parser.dart';
+import '../services/player_tuning.dart';
 import '../services/storage_service.dart';
 import '../widgets/track_picker.dart';
 
@@ -65,6 +70,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   final FocusNode _nextFocus = FocusNode(debugLabel: 'live-next');
   final FocusNode _audioFocus = FocusNode(debugLabel: 'live-audio');
   final FocusNode _subtitleFocus = FocusNode(debugLabel: 'live-subtitle');
+  final FocusNode _fitFocus = FocusNode(debugLabel: 'live-fit');
+  final FocusNode _codecFocus = FocusNode(debugLabel: 'live-codec');
   final TextEditingController _searchController = TextEditingController();
   final Map<String, FocusNode> _rowNodes = <String, FocusNode>{};
 
@@ -86,6 +93,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   int _reconnectAttempt = 0;
   Duration _lastPosition = Duration.zero;
   String _clockText = '';
+  int _fitMode = 0;
+  bool _hwDec = true;
 
   int _level = 1;
   String _country = _kAllCountries;
@@ -111,10 +120,12 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     super.initState();
     _player = Player(
       configuration: const PlayerConfiguration(
-        bufferSize: 32 * 1024 * 1024,
+        bufferSize: 16 * 1024 * 1024,
       ),
     );
     _controller = VideoController(_player);
+    unawaited(tunePlayer(_player, live: true));
+    unawaited(_enableWakelock());
     _bufferingSub = _player.stream.buffering.listen(_onBuffering);
     _errorSub = _player.stream.error.listen(_onPlayerError);
     _completedSub = _player.stream.completed.listen(_onCompleted);
@@ -130,16 +141,28 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (channels.isNotEmpty) {
       final initial = widget.initialChannel ?? channels.first;
       _current = initial;
-      _player.open(Media(initial.url, httpHeaders: initial.httpHeaders));
+      unawaited(
+        _player.open(
+          Media(initial.url, httpHeaders: initial.httpHeaders),
+          play: true,
+        ),
+      );
       StorageService.instance.addRecentChannel(initial);
+      if (initial.type == MediaType.live) {
+        unawaited(StorageService.instance.setLastChannelId(initial.id));
+      }
     }
     StorageService.instance.changes.addListener(_onStorageChanged);
+    EpgService.instance.changes.addListener(_onEpgChanged);
+    unawaited(EpgService.instance.load(M3uService.lastEpgUrls));
     _focusFirstRow();
   }
 
   @override
   void dispose() {
     StorageService.instance.changes.removeListener(_onStorageChanged);
+    EpgService.instance.changes.removeListener(_onEpgChanged);
+    unawaited(_disableWakelock());
     _barTimer?.cancel();
     _clockTimer?.cancel();
     _reconnectTimer?.cancel();
@@ -156,12 +179,35 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _nextFocus.dispose();
     _audioFocus.dispose();
     _subtitleFocus.dispose();
+    _fitFocus.dispose();
+    _codecFocus.dispose();
     for (final node in _rowNodes.values) {
       node.dispose();
     }
     _rowNodes.clear();
     _player.dispose();
     super.dispose();
+  }
+
+  Future<void> _enableWakelock() async {
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
+  Future<void> _disableWakelock() async {
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
+  void _onEpgChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onBuffering(bool value) {
@@ -299,6 +345,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     return value.isEmpty ? 'Genel' : value;
   }
 
+  /// EPG verisi varsa şu anki programı, yoksa mevcut alt metni döner.
+  String _subtitleOf(MediaItem item) {
+    final epg = EpgService.instance.nowPlaying(item.tvgId);
+    if (epg != null && epg.isNotEmpty) return epg;
+    return '${t(_subOf(item))} · ${_countryOf(item)}';
+  }
+
   void _buildIndex() {
     _byCountry.clear();
     for (final item in _channels) {
@@ -410,15 +463,22 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _playerFocus.requestFocus();
   }
 
-  void _playChannel(MediaItem item) {
+  Future<void> _playChannel(MediaItem item) async {
     _cancelReconnect();
     _lastPosition = Duration.zero;
     setState(() {
       _current = item;
       _reconnecting = false;
     });
-    _player.open(Media(item.url, httpHeaders: item.httpHeaders));
+    // Önceki yayın durdurulmadan açılır; kanal geçişi bu yüzden hızlıdır.
+    await _player.open(
+      Media(item.url, httpHeaders: item.httpHeaders),
+      play: true,
+    );
     StorageService.instance.addRecentChannel(item);
+    if (item.type == MediaType.live) {
+      await StorageService.instance.setLastChannelId(item.id);
+    }
   }
 
   void _onChannelTap(MediaItem item) {
@@ -427,7 +487,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       _enterFullscreen();
       return;
     }
-    _playChannel(item);
+    unawaited(_playChannel(item));
   }
 
   void _stepChannel(int delta) {
@@ -441,8 +501,45 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     var next = index + delta;
     if (next < 0) next = list.length - 1;
     if (next >= list.length) next = 0;
-    _playChannel(list[next]);
+    unawaited(_playChannel(list[next]));
     _openBar();
+  }
+
+  String get _fitLabel {
+    switch (_fitMode) {
+      case 1:
+        return t('Sığdır');
+      case 2:
+        return t('Doldur');
+      default:
+        return '16:9';
+    }
+  }
+
+  void _cycleFit() {
+    setState(() {
+      _fitMode = (_fitMode + 1) % 3;
+    });
+    _openBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1200),
+        content: Text(_fitLabel),
+      ),
+    );
+  }
+
+  Future<void> _toggleHwDec() async {
+    setState(() {
+      _hwDec = !_hwDec;
+    });
+    await setHwDec(_player, _hwDec);
+    final current = _current;
+    if (current == null) return;
+    await _player.open(
+      Media(current.url, httpHeaders: current.httpHeaders),
+      play: true,
+    );
   }
 
   void _enterFullscreen() {
@@ -475,7 +572,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         _barOpen = true;
       });
     }
-    _barTimer = Timer(const Duration(seconds: 5), () {
+    _barTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
       setState(() {
         _barOpen = false;
@@ -695,16 +792,16 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                   color: Color(0xFF4A5A75),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Kanal bulunamadı.',
-                  style: TextStyle(fontSize: 15, color: Color(0xFFB9C6D8)),
+                Text(
+                  t('Kanal bulunamadı.'),
+                  style: const TextStyle(fontSize: 15, color: Color(0xFFB9C6D8)),
                 ),
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: () {
                     Navigator.of(context).maybePop();
                   },
-                  child: const Text('Geri'),
+                  child: Text(t('Geri')),
                 ),
               ],
             ),
@@ -812,11 +909,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            Video(
-              controller: _controller,
-              controls: NoVideoControls,
-              fit: BoxFit.contain,
-            ),
+            _buildVideo(),
             if (_buffering && !_reconnecting)
               const Center(
                 child: SizedBox(
@@ -853,7 +946,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Yeniden bağlanılıyor… (deneme $_reconnectAttempt)',
+                        t('Yeniden bağlanılıyor… (deneme {n})')
+                            .replaceAll('{n}', '$_reconnectAttempt'),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -867,6 +961,18 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildVideo() {
+    final video = Video(
+      controller: _controller,
+      controls: NoVideoControls,
+      fit: _fitMode == 2 ? BoxFit.cover : BoxFit.contain,
+    );
+    if (_fitMode != 0) return video;
+    return Center(
+      child: AspectRatio(aspectRatio: 16 / 9, child: video),
     );
   }
 
@@ -959,7 +1065,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${_subOf(item)} · ${_countryOf(item)}',
+                              _subtitleOf(item),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -973,7 +1079,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                       const SizedBox(width: 16),
                       _BarButton(
                         node: _prevFocus,
-                        label: 'Önceki kanal',
+                        label: t('Önceki kanal'),
                         icon: Icons.chevron_left_rounded,
                         onTap: () {
                           _stepChannel(-1);
@@ -982,7 +1088,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                       const SizedBox(width: 8),
                       _BarButton(
                         node: _nextFocus,
-                        label: 'Sonraki',
+                        label: t('Sonraki'),
                         icon: Icons.chevron_right_rounded,
                         onTap: () {
                           _stepChannel(1);
@@ -1006,7 +1112,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                               const SizedBox(width: 10),
                               _BarIconButton(
                                 node: _audioFocus,
-                                label: 'Ses Dili',
+                                label: t('Ses Dili'),
                                 icon: Icons.audiotrack_rounded,
                                 onTap: () {
                                   _openAudioPicker();
@@ -1015,10 +1121,28 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                               const SizedBox(width: 6),
                               _BarIconButton(
                                 node: _subtitleFocus,
-                                label: 'Altyazı',
+                                label: t('Altyazı'),
                                 icon: Icons.subtitles_rounded,
                                 onTap: () {
                                   _openSubtitlePicker();
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _BarIconButton(
+                                node: _fitFocus,
+                                label: t('Görüntü Oranı'),
+                                icon: Icons.aspect_ratio_rounded,
+                                text: _fitLabel,
+                                onTap: _cycleFit,
+                              ),
+                              const SizedBox(width: 6),
+                              _BarIconButton(
+                                node: _codecFocus,
+                                label: t('Kod Çözücü'),
+                                icon: Icons.memory_rounded,
+                                text: _hwDec ? 'HW' : 'SW',
+                                onTap: () {
+                                  unawaited(_toggleHwDec());
                                 },
                               ),
                               const SizedBox(width: 10),
@@ -1087,15 +1211,15 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
               Navigator.of(context).maybePop();
             },
             icon: const Icon(Icons.arrow_back_rounded, size: 20),
-            label: const Text('Geri'),
+            label: Text(t('Geri')),
           ),
           const SizedBox(width: 4),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Canlı TV',
+              t('Canlı TV'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
@@ -1116,7 +1240,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         cursorColor: kNeonCyan,
         style: const TextStyle(fontSize: 14, color: Colors.white),
         decoration: InputDecoration(
-          hintText: 'Kanal ara…',
+          hintText: t('Kanal ara…'),
           hintStyle: const TextStyle(
             fontSize: 14,
             color: Color(0xFF8A9AB5),
@@ -1180,8 +1304,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         if (index == 0) {
           return _MenuRow(
             node: _nodeFor('recent'),
-            title: 'Son İzlenenler',
-            subtitle: '${_recentChannels.length} kanal',
+            title: t('Son İzlenenler'),
+            subtitle: t('{n} kanal').replaceAll('{n}', '${_recentChannels.length}'),
             leading: const Icon(
               Icons.history_rounded,
               size: 20,
@@ -1200,8 +1324,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         if (index == 1) {
           return _MenuRow(
             node: _nodeFor('favorites'),
-            title: 'Favoriler',
-            subtitle: '${_favoriteChannels.length} kanal',
+            title: t('Favoriler'),
+            subtitle: t('{n} kanal').replaceAll('{n}', '${_favoriteChannels.length}'),
             leading: const Icon(
               Icons.star_rounded,
               size: 20,
@@ -1218,11 +1342,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           );
         }
         if (index == 2) {
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 6),
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
             child: Text(
-              'Tüm Ülkeler',
-              style: TextStyle(
+              t('Tüm Ülkeler'),
+              style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
@@ -1234,8 +1358,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         final name = _countryList[index - 3];
         return _MenuRow(
           node: _nodeFor('country-$name'),
-          title: name,
-          subtitle: '${_countryCount(name)} kanal',
+          title: name == _kAllCountries ? t('Tümü') : name,
+          subtitle: t('{n} kanal').replaceAll('{n}', '${_countryCount(name)}'),
           leading: const Icon(
             Icons.public_rounded,
             size: 18,
@@ -1263,7 +1387,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         if (index == 0) {
           return _MenuRow(
             node: _nodeFor('subs-back'),
-            title: '‹ Ülkeler',
+            title: t('‹ Ülkeler'),
             onTap: _goBackLevel,
             onLeft: _goBackLevel,
             onRight: _focusPlayer,
@@ -1276,7 +1400,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           return _MenuRow(
             node: _nodeFor('sub-$_country-$_kAllChannels'),
             title: _kAllChannels,
-            subtitle: '${_itemsOfCountry(_country).length} kanal',
+            subtitle: t('{n} kanal')
+                .replaceAll('{n}', '${_itemsOfCountry(_country).length}'),
             leading: const Icon(
               Icons.apps_rounded,
               size: 18,
@@ -1297,7 +1422,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         return _MenuRow(
           node: _nodeFor('sub-$_country-$sub'),
           title: sub,
-          subtitle: '${_subCounts[sub] ?? 0} kanal',
+          subtitle: t('{n} kanal').replaceAll('{n}', '${_subCounts[sub] ?? 0}'),
           leading: const Icon(
             Icons.category_rounded,
             size: 18,
@@ -1319,7 +1444,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   Widget _buildChannelList(List<MediaItem> items, String prefix) {
     if (items.isEmpty) {
-      return const _MenuEmpty(message: 'Kanal bulunamadı.');
+      return _MenuEmpty(message: t('Kanal bulunamadı.'));
     }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1332,7 +1457,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         return _MenuRow(
           node: _nodeFor(key),
           title: channel.name,
-          subtitle: '${_subOf(channel)} · ${_countryOf(channel)}',
+          subtitle: _subtitleOf(channel),
           leading: _ChannelLogo(channel: channel),
           playing: playing,
           trailing: _StarButton(
@@ -1551,9 +1676,9 @@ class _MenuRowState extends State<_MenuRow> {
                                   ),
                                 ),
                                 const SizedBox(width: 5),
-                                const Text(
-                                  'CANLI',
-                                  style: TextStyle(
+                                Text(
+                                  t('CANLI'),
+                                  style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
                                     color: kNeonMagenta,
@@ -1730,12 +1855,14 @@ class _BarIconButton extends StatefulWidget {
     required this.label,
     required this.icon,
     required this.onTap,
+    this.text,
   });
 
   final FocusNode node;
   final String label;
   final IconData icon;
   final VoidCallback onTap;
+  final String? text;
 
   @override
   State<_BarIconButton> createState() => _BarIconButtonState();
@@ -1805,8 +1932,11 @@ class _BarIconButtonState extends State<_BarIconButton> {
               onTap: widget.onTap,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
-                width: 38,
+                width: widget.text == null ? 38 : null,
                 height: 38,
+                padding: widget.text == null
+                    ? null
+                    : const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
                   color: _active ? kNeonCyanSoft : kNeonSurfaceHigh,
                   borderRadius: BorderRadius.circular(10),
@@ -1815,11 +1945,34 @@ class _BarIconButtonState extends State<_BarIconButton> {
                     width: _active ? 2 : 1,
                   ),
                 ),
-                child: Icon(
-                  widget.icon,
-                  size: 19,
-                  color: _active ? kNeonCyan : const Color(0xFFB8C4D9),
-                ),
+                child: widget.text == null
+                    ? Icon(
+                        widget.icon,
+                        size: 19,
+                        color: _active ? kNeonCyan : const Color(0xFFB8C4D9),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            widget.icon,
+                            size: 17,
+                            color:
+                                _active ? kNeonCyan : const Color(0xFFB8C4D9),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            widget.text!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _active
+                                  ? kNeonCyan
+                                  : const Color(0xFFB8C4D9),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),
@@ -1908,9 +2061,9 @@ class _NowBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: kNeonCyan.withOpacity(0.7)),
       ),
-      child: const Text(
-        'şu an',
-        style: TextStyle(
+      child: Text(
+        t('şu an'),
+        style: const TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: kNeonCyan,

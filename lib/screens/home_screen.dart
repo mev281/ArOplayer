@@ -1,10 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/l10n.dart';
 import '../services/storage_service.dart';
+import '../services/update_service.dart';
+import '../widgets/update_dialog.dart';
 import 'live_player_screen.dart';
 import 'multi_view_screen.dart';
 import 'series_detail_screen.dart';
@@ -12,17 +16,19 @@ import 'setup_screen.dart';
 import 'vod_grid_screen.dart';
 import 'vod_player_screen.dart';
 
-const List<_MenuEntry> _menuEntries = <_MenuEntry>[
-  _MenuEntry('Ana sayfa', Icons.home_rounded),
-  _MenuEntry('Canlı TV', Icons.live_tv_rounded),
-  _MenuEntry('Çoklu Ekran', Icons.grid_view_rounded),
-  _MenuEntry('Yeni Filmler', Icons.local_movies_rounded),
-  _MenuEntry('Filmler', Icons.movie_rounded),
-  _MenuEntry('Diziler', Icons.tv_rounded),
-  _MenuEntry('Favoriler', Icons.favorite_rounded),
-  _MenuEntry('Arama', Icons.search_rounded),
-  _MenuEntry('Ayarlar', Icons.settings_rounded),
-];
+List<_MenuEntry> _menuEntries() {
+  return <_MenuEntry>[
+    _MenuEntry(t('Ana sayfa'), Icons.home_rounded),
+    _MenuEntry(t('Canlı TV'), Icons.live_tv_rounded),
+    _MenuEntry(t('Çoklu Ekran'), Icons.grid_view_rounded),
+    _MenuEntry(t('Yeni Filmler'), Icons.local_movies_rounded),
+    _MenuEntry(t('Filmler'), Icons.movie_rounded),
+    _MenuEntry(t('Diziler'), Icons.tv_rounded),
+    _MenuEntry(t('Favoriler'), Icons.favorite_rounded),
+    _MenuEntry(t('Arama'), Icons.search_rounded),
+    _MenuEntry(t('Ayarlar'), Icons.settings_rounded),
+  ];
+}
 
 String _foldText(String input) {
   var text = input.replaceAll('\u0130', 'i').replaceAll('I', 'i');
@@ -112,14 +118,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _section = _idxHome;
   String _query = '';
+  String _version = '';
+
+  static bool _updateChecked = false;
+  static bool _autoPlayed = false;
 
   @override
   void initState() {
     super.initState();
-    for (var i = 0; i < _menuEntries.length; i++) {
+    final entries = _menuEntries();
+    for (var i = 0; i < entries.length; i++) {
       _menuNodes.add(FocusNode(debugLabel: 'home-menu-$i'));
     }
     StorageService.instance.changes.addListener(_onStorageChanged);
+    _loadVersion();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startupTasks();
+    });
   }
 
   @override
@@ -137,6 +152,79 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onStorageChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _version = info.version;
+      });
+    } catch (_) {
+      return;
+    }
+  }
+
+  Future<void> _startupTasks() async {
+    await _checkUpdatesSilently();
+    if (!mounted) return;
+    await _maybeAutoPlayLast();
+  }
+
+  Future<void> _checkUpdatesSilently() async {
+    if (_updateChecked) return;
+    _updateChecked = true;
+    final info = await UpdateService.check();
+    if (info == null || !mounted) return;
+    await showUpdateDialog(context, info);
+  }
+
+  Future<void> _checkUpdates() async {
+    final info = await UpdateService.check();
+    if (!mounted) return;
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('Uygulama güncel'))),
+      );
+      return;
+    }
+    await showUpdateDialog(context, info);
+  }
+
+  Future<void> _maybeAutoPlayLast() async {
+    if (_autoPlayed) return;
+    _autoPlayed = true;
+    final storage = StorageService.instance;
+    if (!storage.autoPlayLast) return;
+    final id = storage.lastChannelId;
+    if (id == null) return;
+    MediaItem? found;
+    for (final item in widget.data.live) {
+      if (item.id == id) {
+        found = item;
+        break;
+      }
+    }
+    final channel = found;
+    if (channel == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => LivePlayerScreen(
+          data: widget.data,
+          initialChannel: channel,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setLanguage(String code) async {
+    await StorageService.instance.setLanguage(code);
+    L10n.language.value = code;
+  }
+
+  Future<void> _toggleAutoPlayLast(bool value) async {
+    await StorageService.instance.setAutoPlayLast(value);
   }
 
   void _focusMenu(int index) {
@@ -210,6 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSidebar() {
+    final entries = _menuEntries();
     return Container(
       width: 240,
       decoration: const BoxDecoration(
@@ -240,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'IPTV & Medya Oynatıcı',
+                  t('IPTV & Medya Oynatıcı'),
                   style: TextStyle(
                     fontSize: 11,
                     letterSpacing: 1,
@@ -254,9 +343,9 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              itemCount: _menuEntries.length,
+              itemCount: entries.length,
               itemBuilder: (context, index) {
-                final entry = _menuEntries[index];
+                final entry = entries[index];
                 return _SidebarItem(
                   label: entry.label,
                   icon: entry.icon,
@@ -282,7 +371,9 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Text(
-              '${widget.data.live.length} kanal · ${widget.data.movies.length + widget.data.newMovies.length} film · ${widget.data.series.length} dizi',
+              '${t('{n} kanal').replaceAll('{n}', '${widget.data.live.length}')} · '
+              '${t('{n} film').replaceAll('{n}', '${widget.data.movies.length + widget.data.newMovies.length}')} · '
+              '${t('{n} dizi').replaceAll('{n}', '${widget.data.series.length}')}',
               style: const TextStyle(fontSize: 10, color: Color(0xFF6E6E80)),
             ),
           ),
@@ -295,19 +386,19 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (_section) {
       case _idxNewMovies:
         return VodGridScreen(
-          title: 'Yeni Filmler',
+          title: t('Yeni Filmler'),
           movies: widget.data.newMovies,
           embedded: true,
         );
       case _idxMovies:
         return VodGridScreen(
-          title: 'Filmler',
+          title: t('Filmler'),
           movies: widget.data.movies,
           embedded: true,
         );
       case _idxSeries:
         return VodGridScreen(
-          title: 'Diziler',
+          title: t('Diziler'),
           series: widget.data.series,
           embedded: true,
         );
@@ -334,9 +425,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
       children: <Widget>[
-        const Text(
-          'Ana sayfa',
-          style: TextStyle(
+        Text(
+          t('Ana sayfa'),
+          style: const TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
             letterSpacing: 1,
@@ -344,21 +435,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Kaldığın yerden devam et, favori kanallarına hızlıca geç.',
-          style: TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
+        Text(
+          t('Kaldığın yerden devam et, favori kanallarına hızlıca geç.'),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
         ),
         const SizedBox(height: 28),
         _SectionHeader(
-          title: 'İzlemeye Devam Et',
+          title: t('İzlemeye Devam Et'),
           icon: Icons.play_circle_fill_rounded,
-          trailing: continueList.isEmpty ? null : '${continueList.length} içerik',
+          trailing: continueList.isEmpty
+              ? null
+              : t('{n} içerik')
+                  .replaceAll('{n}', '${continueList.length}'),
         ),
         const SizedBox(height: 12),
         if (continueList.isEmpty)
-          const _EmptyStrip(
+          _EmptyStrip(
             icon: Icons.play_circle_outline_rounded,
-            message: 'Henüz izlemeye başladığın bir içerik yok.',
+            message: t('Henüz izlemeye başladığın bir içerik yok.'),
           )
         else
           SizedBox(
@@ -387,17 +481,19 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         const SizedBox(height: 32),
         _SectionHeader(
-          title: 'Favori Kanallar',
+          title: t('Favori Kanallar'),
           icon: Icons.favorite_rounded,
           trailing: favoriteChannels.isEmpty
               ? null
-              : '${favoriteChannels.length} kanal',
+              : t('{n} kanal').replaceAll('{n}', '${favoriteChannels.length}'),
         ),
         const SizedBox(height: 12),
         if (favoriteChannels.isEmpty)
-          const _EmptyStrip(
+          _EmptyStrip(
             icon: Icons.star_border_rounded,
-            message: 'Favori kanal eklemek için canlı TV panelindeki yıldızı kullan.',
+            message: t(
+              'Favori kanal eklemek için canlı TV panelindeki yıldızı kullan.',
+            ),
           )
         else
           SizedBox(
@@ -433,25 +529,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 24, 28, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 4),
           child: _SectionHeader(
-            title: 'Favoriler',
+            title: t('Favoriler'),
             icon: Icons.favorite_rounded,
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(28, 0, 28, 16),
           child: Text(
-            '${favorites.length} favori içerik',
+            t('{n} favori içerik').replaceAll('{n}', '${favorites.length}'),
             style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
           ),
         ),
         Expanded(
           child: favorites.isEmpty
-              ? const _EmptyArea(
+              ? _EmptyArea(
                   icon: Icons.favorite_border_rounded,
-                  message: 'Henüz favori eklemedin.',
+                  message: t('Henüz favori eklemedin.'),
                 )
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
@@ -469,9 +565,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: item.name,
                       subtitle: item.type == MediaType.live
                           ? (item.groupTitle.isEmpty
-                              ? 'Canlı kanal'
+                              ? t('Canlı kanal')
                               : item.groupTitle)
-                          : 'İçerik',
+                          : t('İçerik'),
                       imageUrl: item.logo,
                       icon: item.type == MediaType.live
                           ? Icons.live_tv_rounded
@@ -507,10 +603,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 24, 28, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 4),
           child: _SectionHeader(
-            title: 'Arama',
+            title: t('Arama'),
             icon: Icons.search_rounded,
           ),
         ),
@@ -526,7 +622,7 @@ class _HomeScreenState extends State<HomeScreen> {
               });
             },
             decoration: InputDecoration(
-              hintText: 'Kanal, film veya dizi ara',
+              hintText: t('Kanal, film veya dizi ara'),
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _query.isEmpty
                   ? null
@@ -544,14 +640,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Expanded(
           child: _query.trim().isEmpty
-              ? const _EmptyArea(
+              ? _EmptyArea(
                   icon: Icons.search_rounded,
-                  message: 'Aramak için bir şeyler yaz.',
+                  message: t('Aramak için bir şeyler yaz.'),
                 )
               : hits.isEmpty
-                  ? const _EmptyArea(
+                  ? _EmptyArea(
                       icon: Icons.search_off_rounded,
-                      message: 'Sonuç bulunamadı.',
+                      message: t('Sonuç bulunamadı.'),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(28, 0, 28, 32),
@@ -581,7 +677,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!_foldText(item.name).contains(folded)) continue;
       hits.add(_SearchHit(
         title: item.name,
-        subtitle: item.groupTitle.isEmpty ? 'Canlı kanal' : item.groupTitle,
+        subtitle: item.groupTitle.isEmpty ? t('Canlı kanal') : item.groupTitle,
         icon: Icons.live_tv_rounded,
         onTap: () {
           Navigator.of(context).push(
@@ -602,7 +698,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!_foldText(item.name).contains(folded)) continue;
       hits.add(_SearchHit(
         title: item.name,
-        subtitle: item.type == MediaType.newMovie ? 'Yeni film' : 'Film',
+        subtitle: item.type == MediaType.newMovie ? t('Yeni film') : t('Film'),
         icon: Icons.movie_rounded,
         onTap: () {
           Navigator.of(context).push(
@@ -617,7 +713,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!_foldText(entry.name).contains(folded)) continue;
       hits.add(_SearchHit(
         title: entry.name,
-        subtitle: '${entry.episodeCount} bölüm',
+        subtitle: t('{n} bölüm').replaceAll('{n}', '${entry.episodeCount}'),
         icon: Icons.tv_rounded,
         onTap: () {
           Navigator.of(context).push(
@@ -635,22 +731,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final storage = StorageService.instance;
     final sourceType = storage.sourceType;
     final sourceLabel = sourceType == null
-        ? 'Kaynak tanımlı değil'
+        ? t('Kaynak tanımlı değil')
         : sourceType == SourceType.xtream
             ? 'Xtream Codes'
-            : 'M3U Linki';
+            : t('M3U Linki');
     final pin = storage.pin;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
       children: <Widget>[
-        const _SectionHeader(
-          title: 'Ayarlar',
+        _SectionHeader(
+          title: t('Ayarlar'),
           icon: Icons.settings_rounded,
         ),
         const SizedBox(height: 20),
         _SettingsCard(
-          title: 'Kaynak',
+          title: t('Kaynak'),
           subtitle: sourceLabel,
           child: Align(
             alignment: Alignment.centerLeft,
@@ -659,29 +755,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 _changeSource();
               },
               icon: const Icon(Icons.swap_horiz_rounded),
-              label: const Text('Kaynağı değiştir'),
+              label: Text(t('Kaynağı değiştir')),
             ),
           ),
         ),
         const SizedBox(height: 14),
         _SettingsCard(
-          title: 'Ebeveyn kontrolü',
+          title: t('Ebeveyn kontrolü'),
           subtitle: pin == null
-              ? 'PIN tanımlı değil'
-              : 'PIN tanımlı (4 hane)',
+              ? t('PIN tanımlı değil')
+              : t('PIN tanımlı (4 hane)'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               SwitchListTile(
                 value: storage.hideAdult,
                 contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Yetişkin kategorilerini gizle',
-                  style: TextStyle(color: Colors.white),
+                title: Text(
+                  t('Yetişkin kategorilerini gizle'),
+                  style: const TextStyle(color: Colors.white),
                 ),
-                subtitle: const Text(
-                  'Değiştirmek için PIN doğrulaması gerekir.',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF8A8A9B)),
+                subtitle: Text(
+                  t('Değiştirmek için PIN doğrulaması gerekir.'),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF8A8A9B),
+                  ),
                 ),
                 onChanged: (value) {
                   _toggleHideAdult(value);
@@ -695,7 +794,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     _changePin();
                   },
                   icon: const Icon(Icons.pin_rounded),
-                  label: Text(pin == null ? 'PIN belirle' : 'PIN değiştir'),
+                  label: Text(
+                    pin == null ? t('PIN belirle') : t('PIN değiştir'),
+                  ),
                 ),
               ),
             ],
@@ -703,8 +804,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsCard(
-          title: 'Liste',
-          subtitle: 'Kaynak listesini yeniden indirir.',
+          title: t('Liste'),
+          subtitle: t('Kaynak listesini yeniden indirir.'),
           child: Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.icon(
@@ -712,7 +813,66 @@ class _HomeScreenState extends State<HomeScreen> {
                 _reloadPlaylist();
               },
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Listeyi yenile'),
+              label: Text(t('Listeyi yenile')),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
+          title: t('Dil'),
+          subtitle: t('Arayüz dilini seçin.'),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: <Widget>[
+              for (final entry in L10n.languageNames.entries)
+                if (L10n.language.value == entry.key)
+                  FilledButton(
+                    onPressed: () {
+                      _setLanguage(entry.key);
+                    },
+                    child: Text(entry.value),
+                  )
+                else
+                  OutlinedButton(
+                    onPressed: () {
+                      _setLanguage(entry.key);
+                    },
+                    child: Text(entry.value),
+                  ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
+          title: t('Oynatma'),
+          subtitle: t('Açılış davranışı'),
+          child: SwitchListTile(
+            value: storage.autoPlayLast,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              t('Açılışta son izlenen kanalı otomatik oynat'),
+              style: const TextStyle(color: Colors.white),
+            ),
+            onChanged: (value) {
+              _toggleAutoPlayLast(value);
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
+          title: t('Güncelleme'),
+          subtitle: _version.isEmpty
+              ? t('Sürüm bilgisi alınamadı')
+              : '${t('Sürüm')}: v$_version',
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                _checkUpdates();
+              },
+              icon: const Icon(Icons.system_update_rounded),
+              label: Text(t('Güncellemeleri Denetle')),
             ),
           ),
         ),
@@ -725,22 +885,24 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: kNeonSurfaceHigh,
-        title: const Text('Kaynağı değiştir'),
-        content: const Text(
-          'Kayıtlı M3U adresi, kanal listesi önbelleği, favoriler, son izlenenler ve izleme geçmişi tamamen silinecek ve kurulum ekranı açılacak. Devam edilsin mi?',
+        title: Text(t('Kaynağı değiştir')),
+        content: Text(
+          t(
+            'Kayıtlı M3U adresi, kanal listesi önbelleği, favoriler, son izlenenler ve izleme geçmişi tamamen silinecek ve kurulum ekranı açılacak. Devam edilsin mi?',
+          ),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () {
               Navigator.of(dialogContext).pop(false);
             },
-            child: const Text('İptal'),
+            child: Text(t('İptal')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop(true);
             },
-            child: const Text('Devam et'),
+            child: Text(t('Devam et')),
           ),
         ],
       ),
@@ -764,7 +926,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleHideAdult(bool value) async {
     final storage = StorageService.instance;
     if (storage.pin != null) {
-      final verified = await _verifyPinDialog('PIN doğrulama');
+      final verified = await _verifyPinDialog(t('PIN doğrulama'));
       if (!verified || !mounted) return;
     }
     await storage.setHideAdult(value);
@@ -773,8 +935,8 @@ class _HomeScreenState extends State<HomeScreen> {
       SnackBar(
         content: Text(
           value
-              ? 'Yetişkin kategorileri gizlendi.'
-              : 'Yetişkin kategorileri gösteriliyor.',
+              ? t('Yetişkin kategorileri gizlendi.')
+              : t('Yetişkin kategorileri gösteriliyor.'),
         ),
       ),
     );
@@ -783,7 +945,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _changePin() async {
     final storage = StorageService.instance;
     if (storage.pin != null) {
-      final verified = await _verifyPinDialog('Mevcut PIN');
+      final verified = await _verifyPinDialog(t('Mevcut PIN'));
       if (!verified || !mounted) return;
     }
     final controller = TextEditingController();
@@ -791,14 +953,19 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: kNeonSurfaceHigh,
-        title: const Text('PIN değiştir'),
+        title: Text(t('PIN değiştir')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              'Yeni 4 haneli PIN gir. Alanı boş bırakırsan ebeveyn kilidi kaldırılır.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
+            Text(
+              t(
+                'Yeni 4 haneli PIN gir. Alanı boş bırakırsan ebeveyn kilidi kaldırılır.',
+              ),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF8A8A9B),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -811,8 +978,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(4),
               ],
-              decoration: const InputDecoration(
-                labelText: 'Yeni PIN',
+              decoration: InputDecoration(
+                labelText: t('Yeni PIN'),
                 counterText: '',
               ),
             ),
@@ -823,13 +990,13 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.of(dialogContext).pop();
             },
-            child: const Text('İptal'),
+            child: Text(t('İptal')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop(controller.text.trim());
             },
-            child: const Text('Kaydet'),
+            child: Text(t('Kaydet')),
           ),
         ],
       ),
@@ -838,7 +1005,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (value == null || !mounted) return;
     if (value.isNotEmpty && value.length != 4) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PIN 4 haneli olmalıdır.')),
+        SnackBar(content: Text(t('PIN 4 haneli olmalıdır.'))),
       );
       return;
     }
@@ -846,7 +1013,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(value.isEmpty ? 'PIN kaldırıldı.' : 'PIN güncellendi.'),
+        content: Text(
+          value.isEmpty ? t('PIN kaldırıldı.') : t('PIN güncellendi.'),
+        ),
       ),
     );
   }
@@ -870,8 +1039,8 @@ class _HomeScreenState extends State<HomeScreen> {
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(4),
           ],
-          decoration: const InputDecoration(
-            labelText: 'PIN',
+          decoration: InputDecoration(
+            labelText: t('PIN'),
             counterText: '',
           ),
         ),
@@ -880,13 +1049,13 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.of(dialogContext).pop(false);
             },
-            child: const Text('İptal'),
+            child: Text(t('İptal')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop(storage.verifyPin(controller.text));
             },
-            child: const Text('Onayla'),
+            child: Text(t('Onayla')),
           ),
         ],
       ),
@@ -1427,7 +1596,7 @@ class _ChannelCardState extends State<_ChannelCard> {
                         const SizedBox(height: 4),
                         Text(
                           widget.channel.groupTitle.isEmpty
-                              ? 'Canlı kanal'
+                              ? t('Canlı kanal')
                               : widget.channel.groupTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

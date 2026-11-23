@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/l10n.dart';
 import '../services/storage_service.dart';
 import '../widgets/poster_card.dart';
 import 'vod_player_screen.dart';
@@ -198,7 +199,8 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '${_seasonKeys.length} Sezon · ${widget.series.episodeCount} Bölüm',
+                        '${t('{n} Sezon').replaceAll('{n}', '${_seasonKeys.length}')} · '
+                        '${t('{n} Bölüm').replaceAll('{n}', '${widget.series.episodeCount}')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -210,7 +212,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                       const SizedBox(height: 8),
                       Text(
                         widget.series.groupTitle.isEmpty
-                            ? 'Dizi'
+                            ? t('Dizi')
                             : widget.series.groupTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -222,7 +224,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                       if (target != null) ...<Widget>[
                         const SizedBox(height: 16),
                         _PlayButton(
-                          label: target.startSec > 0 ? 'Devam Et' : 'İzle',
+                          label: target.startSec > 0 ? t('Devam Et') : t('İzle'),
                           onTap: () {
                             _openTarget(target);
                           },
@@ -341,7 +343,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         itemBuilder: (context, index) {
           final seasonNo = keys[index];
           return _SeasonChip(
-            label: 'Sezon $seasonNo',
+            label: t('Sezon {n}').replaceAll('{n}', '$seasonNo'),
             selected: _season == seasonNo,
             onTap: () {
               setState(() {
@@ -357,10 +359,10 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   Widget _buildEpisodes() {
     final episodes = _episodes;
     if (episodes.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'Bu sezonda bölüm bulunamadı.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF8A8A9B)),
+          t('Bu sezonda bölüm bulunamadı.'),
+          style: const TextStyle(fontSize: 13, color: Color(0xFF8A8A9B)),
         ),
       );
     }
@@ -842,7 +844,10 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Kaldığın yer: ${_formatSeconds(saved)}',
+                          t('Kaldığın yer: {time}').replaceAll(
+                            '{time}',
+                            _formatSeconds(saved),
+                          ),
                           style: const TextStyle(
                             fontSize: 10,
                             color: Color(0xFF8A8A9B),

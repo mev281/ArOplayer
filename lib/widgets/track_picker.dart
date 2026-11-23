@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../main.dart';
+import '../services/l10n.dart';
 
 class _TrackChoice {
   const _TrackChoice({this.audio, this.subtitle, this.addUrl = false});
@@ -32,8 +33,8 @@ String _audioLabel(AudioTrack track, int index) {
   final base = title.isNotEmpty
       ? title
       : (language.isNotEmpty
-          ? 'Ses $index'
-          : (id.isNotEmpty ? id : 'Ses $index'));
+          ? t('Ses {n}').replaceAll('{n}', '$index')
+          : (id.isNotEmpty ? id : t('Ses {n}').replaceAll('{n}', '$index')));
   if (language.isNotEmpty && language != base) {
     return '$base – $language';
   }
@@ -47,8 +48,10 @@ String _subtitleLabel(SubtitleTrack track, int index) {
   final base = title.isNotEmpty
       ? title
       : (language.isNotEmpty
-          ? 'Altyazı $index'
-          : (id.isNotEmpty ? id : 'Altyazı $index'));
+          ? t('Altyazı {n}').replaceAll('{n}', '$index')
+          : (id.isNotEmpty
+              ? id
+              : t('Altyazı {n}').replaceAll('{n}', '$index')));
   if (language.isNotEmpty && language != base) {
     return '$base – $language';
   }
@@ -73,7 +76,7 @@ Future<void> showAudioPicker(BuildContext context, Player player) async {
     options.insert(
       0,
       _TrackOption(
-        label: 'Otomatik',
+        label: t('Otomatik'),
         selected: current.id == 'auto',
         choice: _TrackChoice(audio: AudioTrack.auto()),
       ),
@@ -83,9 +86,9 @@ Future<void> showAudioPicker(BuildContext context, Player player) async {
     context: context,
     barrierColor: Colors.black.withOpacity(0.62),
     builder: (context) => _TrackSheet(
-      title: 'Ses Dili',
+      title: t('Ses Dili'),
       icon: Icons.audiotrack_rounded,
-      emptyMessage: 'Ses bulunamadı',
+      emptyMessage: t('Ses bulunamadı'),
       options: options,
     ),
   );
@@ -100,12 +103,12 @@ Future<void> showSubtitlePicker(BuildContext context, Player player) async {
   final current = player.state.track.subtitle;
   final options = <_TrackOption>[
     _TrackOption(
-      label: 'Kapalı',
+      label: t('Kapalı'),
       selected: current.id == 'no',
       choice: _TrackChoice(subtitle: SubtitleTrack.no()),
     ),
     _TrackOption(
-      label: 'Otomatik',
+      label: t('Otomatik'),
       selected: current.id == 'auto',
       choice: _TrackChoice(subtitle: SubtitleTrack.auto()),
     ),
@@ -123,20 +126,20 @@ Future<void> showSubtitlePicker(BuildContext context, Player player) async {
     ));
   }
   options.add(
-    const _TrackOption(
-      label: 'Harici altyazı ekle (URL)',
+    _TrackOption(
+      label: t('Harici altyazı ekle (URL)'),
       selected: false,
       icon: Icons.link_rounded,
-      choice: _TrackChoice(addUrl: true),
+      choice: const _TrackChoice(addUrl: true),
     ),
   );
   final choice = await showDialog<_TrackChoice>(
     context: context,
     barrierColor: Colors.black.withOpacity(0.62),
     builder: (context) => _TrackSheet(
-      title: 'Altyazı',
+      title: t('Altyazı'),
       icon: Icons.subtitles_rounded,
-      note: embedded == 0 ? 'Altyazı bulunamadı' : null,
+      note: embedded == 0 ? t('Altyazı bulunamadı') : null,
       options: options,
     ),
   );
@@ -149,7 +152,7 @@ Future<void> showSubtitlePicker(BuildContext context, Player player) async {
     );
     if (url == null) return;
     await player.setSubtitleTrack(
-      SubtitleTrack.uri(url, title: 'Harici'),
+      SubtitleTrack.uri(url, title: t('Harici')),
     );
     return;
   }
@@ -227,7 +230,7 @@ class _TrackSheet extends StatelessWidget {
                   ? Padding(
                       padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
                       child: Text(
-                        emptyMessage ?? 'Kayıt bulunamadı',
+                        emptyMessage ?? t('Kayıt bulunamadı'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 13,
@@ -410,7 +413,7 @@ class _SubtitleUrlDialogState extends State<_SubtitleUrlDialog> {
     final value = _controller.text.trim();
     if (!_isValid(value)) {
       setState(() {
-        _error = 'Geçerli bir http(s) .srt veya .vtt bağlantısı girin.';
+        _error = t('Geçerli bir http(s) .srt veya .vtt bağlantısı girin.');
       });
       return;
     }
@@ -434,16 +437,16 @@ class _SubtitleUrlDialogState extends State<_SubtitleUrlDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Row(
+            Row(
               children: <Widget>[
-                Icon(Icons.link_rounded, size: 20, color: kNeonCyan),
-                SizedBox(width: 10),
+                const Icon(Icons.link_rounded, size: 20, color: kNeonCyan),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Harici altyazı ekle',
+                    t('Harici altyazı ekle'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
@@ -475,12 +478,12 @@ class _SubtitleUrlDialogState extends State<_SubtitleUrlDialog> {
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  child: const Text('İptal'),
+                  child: Text(t('İptal')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: _submit,
-                  child: const Text('Ekle'),
+                  child: Text(t('Ekle')),
                 ),
               ],
             ),

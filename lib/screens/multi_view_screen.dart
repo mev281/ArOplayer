@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/l10n.dart';
+import '../services/player_tuning.dart';
 
 String _foldText(String input) {
   var text = input.replaceAll('\u0130', 'i').replaceAll('I', 'i');
@@ -44,11 +49,13 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_enableWakelock());
     _syncPlayers();
   }
 
   @override
   void dispose() {
+    unawaited(_disableWakelock());
     for (var i = 0; i < 4; i++) {
       final player = _players[i];
       _controllers[i] = null;
@@ -59,13 +66,34 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
     super.dispose();
   }
 
+  Future<void> _enableWakelock() async {
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
+  Future<void> _disableWakelock() async {
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
   void _syncPlayers() {
     for (var i = 0; i < 4; i++) {
       final needed = i < _layout;
       if (needed && _players[i] == null) {
-        final player = Player();
+        final player = Player(
+          configuration: const PlayerConfiguration(
+            bufferSize: 8 * 1024 * 1024,
+          ),
+        );
         _players[i] = player;
         _controllers[i] = VideoController(player);
+        unawaited(tunePlayer(player, live: true));
       } else if (!needed && _players[i] != null) {
         final player = _players[i];
         _controllers[i] = null;
@@ -226,7 +254,7 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
         children: <Widget>[
           _TopButton(
             icon: Icons.arrow_back_rounded,
-            label: 'Geri',
+            label: t('Geri'),
             onTap: () {
               Navigator.of(context).maybePop();
             },
@@ -235,9 +263,9 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
             },
           ),
           const SizedBox(width: 14),
-          const Text(
-            'Çoklu Ekran',
-            style: TextStyle(
+          Text(
+            t('Çoklu Ekran'),
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
               color: Colors.white,
@@ -245,13 +273,13 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
           ),
           const SizedBox(width: 10),
           Text(
-            '${widget.channels.length} kanal',
+            t('{n} kanal').replaceAll('{n}', '${widget.channels.length}'),
             style: const TextStyle(fontSize: 11, color: Color(0xFF8A8A9B)),
           ),
           const Spacer(),
           _TopButton(
             icon: Icons.view_agenda_rounded,
-            label: '2\'li',
+            label: t('2\'li'),
             selected: _layout == 2,
             onTap: () {
               _setLayout(2);
@@ -263,7 +291,7 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
           const SizedBox(width: 8),
           _TopButton(
             icon: Icons.grid_view_rounded,
-            label: '4\'lü',
+            label: t('4\'lü'),
             selected: _layout == 4,
             onTap: () {
               _setLayout(4);
@@ -366,7 +394,7 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Kanal seçmek için OK',
+                        t('Kanal seçmek için OK'),
                         style: TextStyle(
                           fontSize: 12,
                           color: active
@@ -393,7 +421,9 @@ class _MultiViewScreenState extends State<MultiViewScreen> {
                     ),
                   ),
                   child: Text(
-                    channel == null ? 'Hücre ${index + 1}' : channel.name,
+                    channel == null
+                        ? t('Hücre {n}').replaceAll('{n}', '${index + 1}')
+                        : channel.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -598,9 +628,9 @@ class _ChannelPickerSheetState extends State<_ChannelPickerSheet> {
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: Row(
               children: <Widget>[
-                const Text(
-                  'Kanal seç',
-                  style: TextStyle(
+                Text(
+                  t('Kanal seç'),
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -627,19 +657,19 @@ class _ChannelPickerSheetState extends State<_ChannelPickerSheet> {
                   _query = value;
                 });
               },
-              decoration: const InputDecoration(
-                hintText: 'Kanal ara',
-                prefixIcon: Icon(Icons.search_rounded),
+              decoration: InputDecoration(
+                hintText: t('Kanal ara'),
+                prefixIcon: const Icon(Icons.search_rounded),
               ),
             ),
           ),
           const SizedBox(height: 12),
           Expanded(
             child: items.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      'Kanal bulunamadı.',
-                      style: TextStyle(
+                      t('Kanal bulunamadı.'),
+                      style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF8A8A9B),
                       ),

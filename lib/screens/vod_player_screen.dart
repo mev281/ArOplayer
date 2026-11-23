@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/l10n.dart';
+import '../services/player_tuning.dart';
 import '../services/storage_service.dart';
 import '../widgets/track_picker.dart';
 
@@ -32,6 +35,8 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'vod-player');
   final FocusNode _audioFocus = FocusNode(debugLabel: 'vod-audio');
   final FocusNode _subtitleFocus = FocusNode(debugLabel: 'vod-subtitle');
+  final FocusNode _fitFocus = FocusNode(debugLabel: 'vod-fit');
+  final FocusNode _codecFocus = FocusNode(debugLabel: 'vod-codec');
 
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
@@ -45,12 +50,20 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   bool _dragging = false;
   bool _startApplied = false;
   double _dragValue = 0;
+  int _fitMode = 0;
+  bool _hwDec = true;
 
   @override
   void initState() {
     super.initState();
-    _player = Player();
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        bufferSize: 32 * 1024 * 1024,
+      ),
+    );
     _controller = VideoController(_player);
+    unawaited(tunePlayer(_player, live: false));
+    unawaited(_enableWakelock());
     _positionSub = _player.stream.position.listen((value) {
       if (!mounted) return;
       setState(() {
@@ -93,6 +106,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   void dispose() {
     _saveTimer?.cancel();
     _saveProgress();
+    unawaited(_disableWakelock());
     _positionSub?.cancel();
     _durationSub?.cancel();
     _playingSub?.cancel();
@@ -100,8 +114,64 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
     _focusNode.dispose();
     _audioFocus.dispose();
     _subtitleFocus.dispose();
+    _fitFocus.dispose();
+    _codecFocus.dispose();
     _player.dispose();
     super.dispose();
+  }
+
+  Future<void> _enableWakelock() async {
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
+  Future<void> _disableWakelock() async {
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {
+      // Desteklenmeyen platformlarda sessizce yok sayılır.
+    }
+  }
+
+  String get _fitLabel {
+    switch (_fitMode) {
+      case 1:
+        return t('Sığdır');
+      case 2:
+        return t('Doldur');
+      default:
+        return '16:9';
+    }
+  }
+
+  void _cycleFit() {
+    setState(() {
+      _fitMode = (_fitMode + 1) % 3;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1200),
+        content: Text(_fitLabel),
+      ),
+    );
+  }
+
+  Future<void> _toggleHwDec() async {
+    final target = _position;
+    setState(() {
+      _hwDec = !_hwDec;
+    });
+    await setHwDec(_player, _hwDec);
+    await _player.open(
+      Media(widget.item.url, httpHeaders: widget.item.httpHeaders),
+      play: true,
+    );
+    if (target > Duration.zero) {
+      await _player.seek(target);
+    }
   }
 
   void _saveProgress() {
@@ -228,11 +298,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
         child: Stack(
           children: <Widget>[
             Positioned.fill(
-              child: Video(
-                controller: _controller,
-                controls: NoVideoControls,
-                fit: BoxFit.contain,
-              ),
+              child: _buildVideo(),
             ),
             Positioned(
               top: 0,
@@ -249,6 +315,18 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildVideo() {
+    final video = Video(
+      controller: _controller,
+      controls: NoVideoControls,
+      fit: _fitMode == 2 ? BoxFit.cover : BoxFit.contain,
+    );
+    if (_fitMode != 0) return video;
+    return Center(
+      child: AspectRatio(aspectRatio: 16 / 9, child: video),
     );
   }
 
@@ -271,7 +349,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
           children: <Widget>[
             _ControlButton(
               icon: Icons.arrow_back_rounded,
-              tooltip: 'Geri',
+              tooltip: t('Geri'),
               onTap: () {
                 Navigator.of(context).maybePop();
               },
@@ -295,7 +373,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
                   const SizedBox(height: 2),
                   Text(
                     widget.item.groupTitle.isEmpty
-                        ? 'Oynatıcı'
+                        ? t('Oynatıcı')
                         : widget.item.groupTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -392,7 +470,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
               children: <Widget>[
                 _ControlButton(
                   icon: Icons.replay_10_rounded,
-                  tooltip: '10 saniye geri',
+                  tooltip: t('10 saniye geri'),
                   onTap: () {
                     _seekBy(const Duration(seconds: -10));
                   },
@@ -402,14 +480,14 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
                   icon: _playing
                       ? Icons.pause_rounded
                       : Icons.play_arrow_rounded,
-                  tooltip: _playing ? 'Duraklat' : 'Oynat',
+                  tooltip: _playing ? t('Duraklat') : t('Oynat'),
                   large: true,
                   onTap: _togglePlay,
                 ),
                 const SizedBox(width: 22),
                 _ControlButton(
                   icon: Icons.forward_10_rounded,
-                  tooltip: '10 saniye ileri',
+                  tooltip: t('10 saniye ileri'),
                   onTap: () {
                     _seekBy(const Duration(seconds: 10));
                   },
@@ -417,7 +495,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
                 const SizedBox(width: 22),
                 _ControlButton(
                   icon: Icons.audiotrack_rounded,
-                  tooltip: 'Ses Dili',
+                  tooltip: t('Ses Dili'),
                   focusNode: _audioFocus,
                   onTap: () {
                     _openAudioPicker();
@@ -426,10 +504,28 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
                 const SizedBox(width: 12),
                 _ControlButton(
                   icon: Icons.subtitles_rounded,
-                  tooltip: 'Altyazı',
+                  tooltip: t('Altyazı'),
                   focusNode: _subtitleFocus,
                   onTap: () {
                     _openSubtitlePicker();
+                  },
+                ),
+                const SizedBox(width: 12),
+                _ControlButton(
+                  icon: Icons.aspect_ratio_rounded,
+                  tooltip: t('Görüntü Oranı'),
+                  text: _fitLabel,
+                  focusNode: _fitFocus,
+                  onTap: _cycleFit,
+                ),
+                const SizedBox(width: 12),
+                _ControlButton(
+                  icon: Icons.memory_rounded,
+                  tooltip: t('Kod Çözücü'),
+                  text: _hwDec ? 'HW' : 'SW',
+                  focusNode: _codecFocus,
+                  onTap: () {
+                    unawaited(_toggleHwDec());
                   },
                 ),
               ],
@@ -448,6 +544,7 @@ class _ControlButton extends StatefulWidget {
     required this.onTap,
     this.large = false,
     this.focusNode,
+    this.text,
   });
 
   final IconData icon;
@@ -455,6 +552,7 @@ class _ControlButton extends StatefulWidget {
   final VoidCallback onTap;
   final bool large;
   final FocusNode? focusNode;
+  final String? text;
 
   @override
   State<_ControlButton> createState() => _ControlButtonState();
@@ -527,11 +625,26 @@ class _ControlButtonState extends State<_ControlButton> {
                       ]
                     : const <BoxShadow>[],
               ),
-              child: Icon(
-                widget.icon,
-                size: widget.large ? 32 : 22,
-                color: _active ? kNeonCyan : Colors.white,
-              ),
+              child: widget.text == null
+                  ? Icon(
+                      widget.icon,
+                      size: widget.large ? 32 : 22,
+                      color: _active ? kNeonCyan : Colors.white,
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          widget.text!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _active ? kNeonCyan : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ),
         ),
