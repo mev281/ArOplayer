@@ -45,6 +45,44 @@ jobs:
           fi
           grep -n "minSdk" android/app/build.gradle* || true
 
+      - name: Configure release signing
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KS_B64" && test -n "$KS_PASS"
+          echo "$KS_B64" | base64 -d > android/app/aroplayer-release.p12
+          python3 - <<'PY'
+          import os, re
+          pw = os.environ["KS_PASS"]
+          if os.path.exists("android/app/build.gradle.kts"):
+              p = "android/app/build.gradle.kts"
+              s = open(p).read()
+              block = ('    signingConfigs {\n        create("release") {\n'
+                       '            storeFile = file("aroplayer-release.p12")\n'
+                       '            storeType = "pkcs12"\n'
+                       '            storePassword = System.getenv("KS_PASS")\n'
+                       '            keyAlias = "aroplayer"\n'
+                       '            keyPassword = System.getenv("KS_PASS")\n'
+                       '        }\n    }\n\n')
+              s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
+              s = s.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")')
+          else:
+              p = "android/app/build.gradle"
+              s = open(p).read()
+              block = ("    signingConfigs {\n        release {\n"
+                       "            storeFile file('aroplayer-release.p12')\n"
+                       "            storeType 'pkcs12'\n"
+                       "            storePassword System.getenv('KS_PASS')\n"
+                       "            keyAlias 'aroplayer'\n"
+                       "            keyPassword System.getenv('KS_PASS')\n"
+                       "        }\n    }\n\n")
+              s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
+              s = s.replace("signingConfigs.debug", "signingConfigs.release")
+          open(p, "w").write(s)
+          PY
+          grep -n "signingConfig" android/app/build.gradle*
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -52,6 +90,8 @@ jobs:
         run: dart run flutter_launcher_icons
 
       - name: Build APK
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
 
       - name: Upload APK
