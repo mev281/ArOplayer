@@ -19,9 +19,7 @@ import '../services/remote_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/track_picker.dart';
 
-const String _kAllCountries = 'Tümü';
-const String _kAllChannels = 'Tüm Kanallar';
-const String _kOtherCountry = 'Diğer';
+const String _kAllChannelsLabel = 'All channels';
 const double _kMenuWidth = 360;
 const double _kRowMinHeight = 56;
 
@@ -98,16 +96,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   bool _hwDec = true;
 
   int _level = 1;
-  String _country = _kAllCountries;
+  bool _menuOpen = false;
   bool _favoritesOnly = false;
   bool _recentOnly = false;
   String _searchQuery = '';
   String? _selectedKey;
 
-  List<String> _countryList = <String>[];
-  final Map<String, List<MediaItem>> _byCountry = <String, List<MediaItem>>{};
-  List<String> _subList = <String>[];
-  final Map<String, int> _subCounts = <String, int>{};
+  List<String> _groupList = <String>[];
+  final Map<String, List<MediaItem>> _byGroup = <String, List<MediaItem>>{};
   List<MediaItem> _channelList = <MediaItem>[];
   List<MediaItem> _favoriteChannels = <MediaItem>[];
   List<MediaItem> _recentChannels = <MediaItem>[];
@@ -134,7 +130,6 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _playingSub = _player.stream.playing.listen(_onPlaying);
     _positionSub = _player.stream.position.listen(_onPosition);
     _buildIndex();
-    _refreshSubs();
     _refreshFavorites();
     _refreshRecent();
     _clockText = _formatClock(DateTime.now());
@@ -339,68 +334,36 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     return buffer.toString().toLowerCase();
   }
 
-  String _countryOf(MediaItem item) {
-    final value = item.country.trim();
-    return value.isEmpty ? _kOtherCountry : value;
-  }
-
-  String _subOf(MediaItem item) {
+  String _groupOf(MediaItem item) {
     final value = item.subCategory.trim();
     return value.isEmpty ? 'Genel' : value;
   }
 
-  /// EPG verisi varsa şu anki programı, yoksa mevcut alt metni döner.
+  String _epgNowLine(EpgProgram program) =>
+      '${program.timeRange}  ${program.title}';
+
+  List<String> _epgLines(MediaItem item) {
+    final now = EpgService.instance.current(item.tvgId);
+    if (now == null) return const <String>[];
+    final lines = <String>[_epgNowLine(now)];
+    final next = EpgService.instance.next(item.tvgId);
+    if (next != null) lines.add('${t('Sıradaki')}: ${_epgNowLine(next)}');
+    return lines;
+  }
+
+  /// EPG verisi varsa şu anki ve sıradaki programı, yoksa grup adını döner.
   String _subtitleOf(MediaItem item) {
-    final epg = EpgService.instance.nowPlaying(item.tvgId);
-    if (epg != null && epg.isNotEmpty) return epg;
-    return '${t(_subOf(item))} · ${_countryOf(item)}';
+    final lines = _epgLines(item);
+    if (lines.isNotEmpty) return lines.join('\n');
+    return _groupOf(item);
   }
 
   void _buildIndex() {
-    _byCountry.clear();
+    _byGroup.clear();
     for (final item in _channels) {
-      _byCountry.putIfAbsent(_countryOf(item), () => <MediaItem>[]).add(item);
+      _byGroup.putIfAbsent(_groupOf(item), () => <MediaItem>[]).add(item);
     }
-    const preferred = <String>[
-      'Türkiye',
-      'Almanya',
-      'İngiltere',
-      'ABD',
-      'Fransa',
-      'Hollanda',
-    ];
-    final list = <String>[_kAllCountries];
-    for (final name in preferred) {
-      if (_byCountry.containsKey(name)) list.add(name);
-    }
-    final others = _byCountry.keys
-        .where((name) => name != _kOtherCountry && !preferred.contains(name))
-        .toList()
-      ..sort((a, b) {
-        final diff = _byCountry[b]!.length.compareTo(_byCountry[a]!.length);
-        if (diff != 0) return diff;
-        return a.toLowerCase().compareTo(b.toLowerCase());
-      });
-    list.addAll(others);
-    if (_byCountry.containsKey(_kOtherCountry)) list.add(_kOtherCountry);
-    _countryList = list;
-  }
-
-  List<MediaItem> _itemsOfCountry(String country) {
-    if (country == _kAllCountries) return _channels;
-    return _byCountry[country] ?? const <MediaItem>[];
-  }
-
-  int _countryCount(String country) => _itemsOfCountry(country).length;
-
-  void _refreshSubs() {
-    _subCounts.clear();
-    for (final item in _itemsOfCountry(_country)) {
-      final sub = _subOf(item);
-      _subCounts[sub] = (_subCounts[sub] ?? 0) + 1;
-    }
-    _subList = _subCounts.keys.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    _groupList = _byGroup.keys.toList();
   }
 
   void _refreshFavorites() {
@@ -436,8 +399,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       if (_favoriteChannels.isEmpty) return null;
       return 'fav-${_favoriteChannels.first.id}';
     }
-    if (_level == 1) return 'country-$_kAllCountries';
-    if (_level == 2) return 'sub-$_country-$_kAllChannels';
+    if (_level == 1) return 'recent';
     if (_channelList.isEmpty) return null;
     return 'ch-${_channelList.first.id}';
   }
@@ -488,6 +450,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   void _onChannelTap(MediaItem item) {
     final current = _current;
+    if (_fullscreen) {
+      _closeMenu();
+      if (current == null || current.id != item.id) {
+        unawaited(_playChannel(item));
+      }
+      _openBar();
+      return;
+    }
     if (current != null && current.id == item.id) {
       _enterFullscreen();
       return;
@@ -566,8 +536,48 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     setState(() {
       _fullscreen = false;
       _barOpen = false;
+      _menuOpen = false;
     });
     _focusFirstRow();
+  }
+
+  void _openMenu() {
+    if (!_fullscreen || _menuOpen) return;
+    _closeBar();
+    setState(() {
+      _menuOpen = true;
+    });
+    _focusFirstRow();
+  }
+
+  void _closeMenu() {
+    if (!_menuOpen) return;
+    setState(() {
+      _menuOpen = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _rootFocus.requestFocus();
+    });
+  }
+
+  bool get _inSubLevel =>
+      _searchQuery.isNotEmpty || _recentOnly || _favoritesOnly || _level == 3;
+
+  void _menuLeft() {
+    if (_inSubLevel) {
+      _goBackLevel();
+    } else if (_fullscreen) {
+      _closeMenu();
+    }
+  }
+
+  void _menuRight() {
+    if (_fullscreen) {
+      _closeMenu();
+    } else {
+      _focusPlayer();
+    }
   }
 
   void _openBar() {
@@ -619,11 +629,23 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   bool _handleBack() {
     if (_fullscreen) {
+      if (_menuOpen) {
+        if (_inSubLevel) {
+          _goBackLevel();
+        } else {
+          _closeMenu();
+        }
+        return true;
+      }
       if (_barOpen) {
         _closeBar();
         return true;
       }
       _exitFullscreen();
+      return true;
+    }
+    if (_inSubLevel) {
+      _goBackLevel();
       return true;
     }
     return false;
@@ -633,26 +655,17 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     return !_handleBack();
   }
 
-  void _selectCountry(String country) {
+  void _selectGroup(String? group) {
+    final list = group == null
+        ? _channels
+        : (_byGroup[group] ?? const <MediaItem>[]);
     setState(() {
-      _country = country;
       _favoritesOnly = false;
       _recentOnly = false;
-      _refreshSubs();
-      _level = 2;
-    });
-    _focusFirstRow();
-  }
-
-  void _selectSub(String sub) {
-    final items = _itemsOfCountry(_country);
-    final list = sub == _kAllChannels
-        ? items
-        : items.where((item) => _subOf(item) == sub).toList();
-    setState(() {
       _channelList = list;
       _activeList = list;
       _level = 3;
+      _selectedKey = null;
     });
     _focusFirstRow();
   }
@@ -695,13 +708,6 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       return;
     }
     if (_level == 3) {
-      setState(() {
-        _level = 2;
-      });
-      _focusFirstRow();
-      return;
-    }
-    if (_level == 2) {
       setState(() {
         _level = 1;
       });
@@ -747,6 +753,12 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       return KeyEventResult.handled;
     }
     if (!_fullscreen) return KeyEventResult.ignored;
+    if (_menuOpen) return KeyEventResult.ignored;
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.contextMenu) {
+      _openMenu();
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
       _stepChannel(-1);
       return KeyEventResult.handled;
@@ -761,7 +773,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         key == LogicalKeyboardKey.select ||
         key == LogicalKeyboardKey.space ||
         key == LogicalKeyboardKey.gameButtonA) {
-      _toggleBar();
+      _openMenu();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -857,7 +869,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _toggleBar,
+            onTap: _menuOpen ? _closeMenu : _toggleBar,
             onDoubleTap: _exitFullscreen,
             child: const SizedBox.expand(),
           ),
@@ -868,6 +880,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           bottom: 0,
           child: _buildInfoBar(),
         ),
+        if (_menuOpen)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: math.min(480.0, MediaQuery.of(context).size.width * 0.9),
+            child: _buildMenu(),
+          ),
       ],
     );
   }
@@ -1069,15 +1089,18 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              _subtitleOf(item),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF9FB0C9),
+                            for (final line in _epgLines(item).isEmpty
+                                ? <String>[_groupOf(item)]
+                                : _epgLines(item))
+                              Text(
+                                line,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF9FB0C9),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -1181,7 +1204,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: kNeonSurface.withOpacity(0.78),
+            color: Colors.black.withOpacity(0.78),
             border: const Border(
               right: BorderSide(color: kNeonBorder),
             ),
@@ -1296,31 +1319,61 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (_favoritesOnly) {
       return _buildChannelList(_favoriteChannels, 'fav');
     }
-    if (_level == 1) return _buildCountries();
-    if (_level == 2) return _buildSubs();
+    if (_level == 1) return _buildCategories();
     return _buildChannelList(_channelList, 'ch');
   }
 
-  Widget _buildCountries() {
+  Widget _numberedLead(int number, Widget icon) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SizedBox(
+          width: 34,
+          child: Text(
+            '$number',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        icon,
+      ],
+    );
+  }
+
+  Widget _channelCountText(int count) {
+    return Text(
+      '$count Channels',
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: Color(0xFFCBD5E1),
+      ),
+    );
+  }
+
+  Widget _buildCategories() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _countryList.length + 3,
+      itemCount: _groupList.length + 3,
       itemBuilder: (context, index) {
         if (index == 0) {
           return _MenuRow(
             node: _nodeFor('recent'),
             title: t('Son İzlenenler'),
-            subtitle: t('{n} kanal').replaceAll('{n}', '${_recentChannels.length}'),
             leading: const Icon(
               Icons.history_rounded,
               size: 20,
               color: kNeonCyan,
             ),
             trailing: _CountBadge(count: _recentChannels.length),
-            chevron: true,
             onTap: _openRecent,
-            onLeft: _goBackLevel,
-            onRight: _focusPlayer,
+            onLeft: _menuLeft,
+            onRight: _menuRight,
             onFocus: () {
               _selectedKey = 'recent';
             },
@@ -1330,117 +1383,61 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           return _MenuRow(
             node: _nodeFor('favorites'),
             title: t('Favoriler'),
-            subtitle: t('{n} kanal').replaceAll('{n}', '${_favoriteChannels.length}'),
             leading: const Icon(
               Icons.star_rounded,
               size: 20,
               color: kNeonMagenta,
             ),
             trailing: _CountBadge(count: _favoriteChannels.length),
-            chevron: true,
             onTap: _openFavorites,
-            onLeft: _goBackLevel,
-            onRight: _focusPlayer,
+            onLeft: _menuLeft,
+            onRight: _menuRight,
             onFocus: () {
               _selectedKey = 'favorites';
             },
           );
         }
-        if (index == 2) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
-            child: Text(
-              t('Tüm Ülkeler'),
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                color: Color(0xFF8A9AB5),
-              ),
-            ),
-          );
-        }
-        final name = _countryList[index - 3];
-        return _MenuRow(
-          node: _nodeFor('country-$name'),
-          title: name == _kAllCountries ? t('Tümü') : name,
-          subtitle: t('{n} kanal').replaceAll('{n}', '${_countryCount(name)}'),
-          leading: const Icon(
-            Icons.public_rounded,
-            size: 18,
-            color: Color(0xFF8A9AB5),
-          ),
-          chevron: true,
-          onTap: () {
-            _selectCountry(name);
-          },
-          onLeft: _goBackLevel,
-          onRight: _focusPlayer,
-          onFocus: () {
-            _selectedKey = 'country-$name';
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildSubs() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _subList.length + 2,
-      itemBuilder: (context, index) {
-        if (index == 0) {
+        if (index == _groupList.length + 2) {
           return _MenuRow(
-            node: _nodeFor('subs-back'),
-            title: t('‹ Ülkeler'),
-            onTap: _goBackLevel,
-            onLeft: _goBackLevel,
-            onRight: _focusPlayer,
-            onFocus: () {
-              _selectedKey = 'subs-back';
-            },
-          );
-        }
-        if (index == 1) {
-          return _MenuRow(
-            node: _nodeFor('sub-$_country-$_kAllChannels'),
-            title: _kAllChannels,
-            subtitle: t('{n} kanal')
-                .replaceAll('{n}', '${_itemsOfCountry(_country).length}'),
+            node: _nodeFor('cat-all'),
+            title: _kAllChannelsLabel,
             leading: const Icon(
               Icons.apps_rounded,
-              size: 18,
-              color: Color(0xFF8A9AB5),
+              size: 20,
+              color: Colors.white,
             ),
-            chevron: true,
+            trailing: _channelCountText(_channels.length),
             onTap: () {
-              _selectSub(_kAllChannels);
+              _selectGroup(null);
             },
-            onLeft: _goBackLevel,
-            onRight: _focusPlayer,
+            onLeft: _menuLeft,
+            onRight: _menuRight,
             onFocus: () {
-              _selectedKey = 'sub-$_country-$_kAllChannels';
+              _selectedKey = 'cat-all';
             },
           );
         }
-        final sub = _subList[index - 2];
+        final position = index - 2;
+        final name = _groupList[position];
         return _MenuRow(
-          node: _nodeFor('sub-$_country-$sub'),
-          title: sub,
-          subtitle: t('{n} kanal').replaceAll('{n}', '${_subCounts[sub] ?? 0}'),
-          leading: const Icon(
-            Icons.category_rounded,
-            size: 18,
-            color: Color(0xFF8A9AB5),
+          node: _nodeFor('cat-$position'),
+          title: name,
+          leading: _numberedLead(
+            position + 1,
+            const Icon(
+              Icons.format_list_bulleted,
+              size: 18,
+              color: Colors.white,
+            ),
           ),
-          chevron: true,
+          trailing: _channelCountText(_byGroup[name]?.length ?? 0),
           onTap: () {
-            _selectSub(sub);
+            _selectGroup(name);
           },
-          onLeft: _goBackLevel,
-          onRight: _focusPlayer,
+          onLeft: _menuLeft,
+          onRight: _menuRight,
           onFocus: () {
-            _selectedKey = 'sub-$_country-$sub';
+            _selectedKey = 'cat-$position';
           },
         );
       },
@@ -1463,7 +1460,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           node: _nodeFor(key),
           title: channel.name,
           subtitle: _subtitleOf(channel),
-          leading: _ChannelLogo(channel: channel),
+          leading: _numberedLead(index + 1, _ChannelLogo(channel: channel)),
           playing: playing,
           trailing: _StarButton(
             active: StorageService.instance.isFavorite(channel),
@@ -1474,8 +1471,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           onTap: () {
             _onChannelTap(channel);
           },
-          onLeft: _goBackLevel,
-          onRight: _focusPlayer,
+          onLeft: _menuLeft,
+          onRight: _menuRight,
           onFocus: () {
             _selectedKey = key;
           },
@@ -1611,14 +1608,14 @@ class _MenuRowState extends State<_MenuRow> {
               constraints: const BoxConstraints(minHeight: _kRowMinHeight),
               decoration: BoxDecoration(
                 color: _active
-                    ? kNeonCyanSoft
+                    ? Colors.red.withOpacity(0.18)
                     : (widget.playing
                         ? kNeonCyanSoft.withOpacity(0.5)
                         : Colors.transparent),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: _active
-                      ? kNeonCyan
+                      ? Colors.red
                       : (widget.playing
                           ? kNeonCyan.withOpacity(0.6)
                           : Colors.transparent),
@@ -1627,7 +1624,7 @@ class _MenuRowState extends State<_MenuRow> {
                 boxShadow: _active
                     ? const <BoxShadow>[
                         BoxShadow(
-                          color: kNeonCyanGlow,
+                          color: Color(0x59F44336),
                           blurRadius: 12,
                           spreadRadius: 1,
                         ),
@@ -1694,7 +1691,7 @@ class _MenuRowState extends State<_MenuRow> {
                               Flexible(
                                 child: Text(
                                   widget.subtitle!,
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     fontSize: 12,

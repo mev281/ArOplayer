@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,7 +6,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
+import '../services/epg_service.dart';
 import '../services/l10n.dart';
+import '../services/m3u_parser.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialog.dart';
@@ -816,6 +819,12 @@ class _HomeScreenState extends State<HomeScreen> {
               label: Text(t('Listeyi yenile')),
             ),
           ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
+          title: 'EPG',
+          subtitle: t('Boş bırakılırsa M3U içindeki url-tvg adresi kullanılır.'),
+          child: const _EpgUrlField(),
         ),
         const SizedBox(height: 14),
         _SettingsCard(
@@ -1901,6 +1910,58 @@ class _ResultRowState extends State<_ResultRow> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EpgUrlField extends StatefulWidget {
+  const _EpgUrlField();
+
+  @override
+  State<_EpgUrlField> createState() => _EpgUrlFieldState();
+}
+
+class _EpgUrlFieldState extends State<_EpgUrlField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: StorageService.instance.epgUrl);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await StorageService.instance.setEpgUrl(_controller.text);
+    unawaited(EpgService.instance.reload(M3uService.lastEpgUrls));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t('EPG adresi kaydedildi.'))),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            keyboardType: TextInputType.url,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              hintText: 'https://.../epg.xml',
+              isDense: true,
+            ),
+            onSubmitted: (_) => _save(),
+          ),
+        ),
+        const SizedBox(width: 10),
+        FilledButton(
+          onPressed: _save,
+          child: Text(t('Kaydet')),
+        ),
+      ],
     );
   }
 }
