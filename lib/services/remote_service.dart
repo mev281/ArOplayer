@@ -14,7 +14,7 @@ class RemoteService {
 
   static const String databaseUrl =
       'https://aroplayer-panel-default-rtdb.europe-west1.firebasedatabase.app';
-  static const String appVersion = 'v1.0.9';
+  static const String appVersion = 'v1.1.0';
   static const String idleLabel = 'Menüde';
   static const String _prefsKey = 'aro_device_id';
   static const Duration _interval = Duration(seconds: 20);
