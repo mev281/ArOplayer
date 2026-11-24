@@ -280,7 +280,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   void _startBufferWatch() {
     _bufferWatchTimer?.cancel();
-    _bufferWatchTimer = Timer(const Duration(seconds: 3), () {
+    _bufferWatchTimer = Timer(const Duration(seconds: 12), () {
       _bufferWatchTimer = null;
       if (!mounted) return;
       _scheduleReconnect();
@@ -307,7 +307,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _bufferWatchTimer?.cancel();
     _bufferWatchTimer = null;
     _reconnectAttempt += 1;
-    const delay = Duration(seconds: 3);
+    final delay = Duration(seconds: math.min(2 * _reconnectAttempt, 10));
     setState(() {
       _reconnecting = true;
       _buffering = false;
@@ -1386,10 +1386,30 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   }
 
   Widget _buildCategories() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _groupList.length + 3,
-      itemBuilder: (context, index) {
+    final total = _groupList.length + 3;
+    String keyAt(int index) {
+      if (index == 0) return 'recent';
+      if (index == 1) return 'favorites';
+      if (index == total - 1) return 'cat-all';
+      return 'cat-${index - 2}';
+    }
+
+    void step(int index, int delta) {
+      final target = index + delta;
+      if (target < 0 || target >= total) return;
+      final node = _nodeFor(keyAt(target));
+      node.requestFocus();
+      final ctx = node.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 120),
+        );
+      }
+    }
+
+    Widget buildRow(int index) {
         if (index == 0) {
           return _MenuRow(
             node: _nodeFor('recent'),
@@ -1402,6 +1422,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
             trailing: _CountBadge(count: _recentChannels.length),
             onTap: _openRecent,
             onLeft: _menuLeft,
+            onUp: () => step(index, -1),
+            onDown: () => step(index, 1),
             onRight: _menuRight,
             onFocus: () {
               _selectedKey = 'recent';
@@ -1420,6 +1442,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
             trailing: _CountBadge(count: _favoriteChannels.length),
             onTap: _openFavorites,
             onLeft: _menuLeft,
+            onUp: () => step(index, -1),
+            onDown: () => step(index, 1),
             onRight: _menuRight,
             onFocus: () {
               _selectedKey = 'favorites';
@@ -1440,6 +1464,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
               _selectGroup(null);
             },
             onLeft: _menuLeft,
+            onUp: () => step(index, -1),
+            onDown: () => step(index, 1),
             onRight: _menuRight,
             onFocus: () {
               _selectedKey = 'cat-all';
@@ -1467,12 +1493,29 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
             _selectGroup(name);
           },
           onLeft: _menuLeft,
+            onUp: () => step(index, -1),
+            onDown: () => step(index, 1),
           onRight: _menuRight,
           onFocus: () {
             _selectedKey = 'cat-$position';
           },
         );
-      },
+    }
+
+    return FocusTraversalGroup(
+      policy: OrderedTraversalPolicy(),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: <Widget>[
+            for (var index = 0; index < total; index++)
+              FocusTraversalOrder(
+                order: NumericFocusOrder(index.toDouble()),
+                child: buildRow(index),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1527,8 +1570,12 @@ class _MenuRow extends StatefulWidget {
     this.playing = false,
     this.chevron = false,
     this.onFocus,
+    this.onUp,
+    this.onDown,
   });
 
+  final VoidCallback? onUp;
+  final VoidCallback? onDown;
   final FocusNode node;
   final String title;
   final String? subtitle;
@@ -1563,10 +1610,18 @@ class _MenuRowState extends State<_MenuRow> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp) {
+      if (widget.onUp != null) {
+        widget.onUp!();
+        return KeyEventResult.handled;
+      }
       widget.node.focusInDirection(TraversalDirection.up);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown) {
+      if (widget.onDown != null) {
+        widget.onDown!();
+        return KeyEventResult.handled;
+      }
       widget.node.focusInDirection(TraversalDirection.down);
       return KeyEventResult.handled;
     }
