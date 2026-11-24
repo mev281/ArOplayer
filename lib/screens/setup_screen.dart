@@ -116,6 +116,15 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final scale = (media.size.height / 720).clamp(0.72, 1.0).toDouble();
+    return MediaQuery(
+      data: media.copyWith(textScaler: TextScaler.linear(scale)),
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       body: SafeArea(
         child: FocusTraversalGroup(

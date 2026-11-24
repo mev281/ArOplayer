@@ -7,10 +7,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../main.dart';
 import '../models/media_item.dart';
 import '../services/epg_service.dart';
+import '../services/library_prefs.dart';
 import '../services/l10n.dart';
 import '../services/m3u_parser.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
+import '../widgets/settings_extras.dart';
 import '../widgets/update_dialog.dart';
 import 'live_player_screen.dart';
 import 'multi_view_screen.dart';
@@ -276,24 +278,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final scale = (media.size.height / 720).clamp(0.72, 1.0).toDouble();
     return WillPopScope(
       onWillPop: _handleBack,
-      child: Scaffold(
-        backgroundColor: kNeonBackground,
-        body: SafeArea(
-          child: Row(
-            children: <Widget>[
-              _buildSidebar(),
-              Expanded(
-                child: Focus(
-                  focusNode: _contentFocusNode,
-                  child: Container(
-                    color: kNeonBackground,
-                    child: _buildSection(),
+      child: MediaQuery(
+        data: media.copyWith(textScaler: TextScaler.linear(scale)),
+        child: Scaffold(
+          backgroundColor: kNeonBackground,
+          body: SafeArea(
+            child: Row(
+              children: <Widget>[
+                _buildSidebar(),
+                Expanded(
+                  child: Focus(
+                    focusNode: _contentFocusNode,
+                    child: Container(
+                      color: kNeonBackground,
+                      child: _buildSection(),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -303,14 +310,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSidebar() {
     final entries = _menuEntries();
     return Container(
-      width: 240,
+      width: MediaQuery.of(context).size.width < 900 ? 200 : 240,
       decoration: const BoxDecoration(
         color: kNeonSurface,
         border: Border(
           right: BorderSide(color: kNeonBorder),
         ),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
@@ -343,31 +351,30 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              itemCount: entries.length,
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                return _SidebarItem(
-                  label: entry.label,
-                  icon: entry.icon,
-                  selected: _section == index,
-                  focusNode: _menuNodes[index],
-                  onSelect: () {
-                    _selectMenu(index);
-                  },
-                  onUp: () {
-                    _focusMenu(index - 1);
-                  },
-                  onDown: () {
-                    _focusMenu(index + 1);
-                  },
-                  onRight: () {
-                    _contentFocusNode.requestFocus();
-                  },
-                );
-              },
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              children: <Widget>[
+                for (var index = 0; index < entries.length; index++)
+                  _SidebarItem(
+                    label: entries[index].label,
+                    icon: entries[index].icon,
+                    selected: _section == index,
+                    focusNode: _menuNodes[index],
+                    onSelect: () {
+                      _selectMenu(index);
+                    },
+                    onUp: () {
+                      _focusMenu(index - 1);
+                    },
+                    onDown: () {
+                      _focusMenu(index + 1);
+                    },
+                    onRight: () {
+                      _contentFocusNode.requestFocus();
+                    },
+                  ),
+              ],
             ),
           ),
           const Divider(height: 1),
@@ -381,6 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -822,6 +830,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsCard(
+          title: t('Listelerim'),
+          subtitle: t('M3U ve EPG listelerini adlandırıp kaydedin, tek tıkla geçin.'),
+          child: const ListManagerBody(),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
+          title: t('Kategori gizleme ve kilit'),
+          subtitle: t('İstenmeyen kategorileri gizleyin veya PIN ile kilitleyin.'),
+          child: CategoryManagerBody(categories: _liveCategories()),
+        ),
+        const SizedBox(height: 14),
+        _SettingsCard(
           title: 'EPG',
           subtitle: t('Boş bırakılırsa M3U içindeki url-tvg adresi kullanılır.'),
           child: const _EpgUrlField(),
@@ -887,6 +907,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  List<String> _liveCategories() {
+    final seen = <String>{};
+    final list = <String>[];
+    for (final item in widget.data.live) {
+      final value = item.subCategory.trim().isEmpty
+          ? 'Genel'
+          : item.subCategory.trim();
+      if (seen.add(value)) list.add(value);
+    }
+    return list;
   }
 
   Future<void> _changeSource() async {

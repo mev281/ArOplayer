@@ -9,6 +9,7 @@ import 'models/media_item.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'services/l10n.dart';
+import 'services/library_prefs.dart';
 import 'services/m3u_parser.dart';
 import 'services/remote_service.dart';
 import 'services/storage_service.dart';
@@ -38,6 +39,7 @@ Future<void> main() async {
     };
     MediaKit.ensureInitialized();
     await StorageService.instance.init();
+    await LibraryPrefs.instance.init();
     PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;
     PaintingBinding.instance.imageCache.maximumSize = 300;
     unawaited(RemoteService.instance.start());

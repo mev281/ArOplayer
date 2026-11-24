@@ -119,6 +119,8 @@ class StorageService {
     changes.value = changes.value + 1;
   }
 
+  Future<void> clearPlaylistCache() => _deleteCache();
+
   Future<void> _deleteCache() async {
     try {
       final file = await _cacheFile();

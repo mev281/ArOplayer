@@ -68,6 +68,7 @@ class UpdateService {
         }
       }
       if (Platform.isAndroid && apkUrl.isEmpty) return null;
+      if (Platform.isWindows && zipUrl.isEmpty) return null;
 
       final page = decoded['html_url'];
       final notes = decoded['body'];
@@ -87,8 +88,12 @@ class UpdateService {
     UpdateInfo info,
     void Function(double) onProgress,
   ) async {
+    if (Platform.isWindows) {
+      await _downloadAndInstallWindows(info, onProgress);
+      return;
+    }
     if (!Platform.isAndroid) {
-      throw UnsupportedError('Guncelleme yalnizca Android uzerinde kurulur.');
+      throw UnsupportedError('Guncelleme yalnizca Android ve Windows uzerinde kurulur.');
     }
     if (info.apkUrl.isEmpty) {
       throw StateError('APK adresi bulunamadi.');
@@ -127,6 +132,76 @@ class UpdateService {
       file.path,
       type: 'application/vnd.android.package-archive',
     );
+  }
+
+  static Future<void> _downloadAndInstallWindows(
+    UpdateInfo info,
+    void Function(double) onProgress,
+  ) async {
+    if (info.zipUrl.isEmpty) {
+      throw StateError('ZIP adresi bulunamadi.');
+    }
+    final sep = Platform.pathSeparator;
+    final workDir = Directory(
+      '${(await getTemporaryDirectory()).path}${sep}ArOplayer-update',
+    );
+    if (await workDir.exists()) {
+      await workDir.delete(recursive: true);
+    }
+    await workDir.create(recursive: true);
+    final zipFile = File('${workDir.path}${sep}update.zip');
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(info.zipUrl)));
+      if (response.statusCode != 200) {
+        throw HttpException('Indirme basarisiz: ${response.statusCode}');
+      }
+      final total = response.contentLength ?? 0;
+      final sink = zipFile.openWrite();
+      var received = 0;
+      try {
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            onProgress((received / total).clamp(0.0, 1.0).toDouble());
+          }
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      onProgress(1);
+    } finally {
+      client.close();
+    }
+
+    final exePath = Platform.resolvedExecutable;
+    final exeName = exePath.substring(exePath.lastIndexOf(sep) + 1);
+    final appDir = exePath.substring(0, exePath.lastIndexOf(sep));
+    final extractDir = '${workDir.path}${sep}extracted';
+    final script = File('${workDir.path}${sep}update.bat');
+    final lines = <String>[
+      '@echo off',
+      'setlocal',
+      'timeout /t 3 /nobreak >nul',
+      'taskkill /F /IM "$exeName" >nul 2>&1',
+      'timeout /t 1 /nobreak >nul',
+      'powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath \'${zipFile.path}\' -DestinationPath \'$extractDir\' -Force"',
+      'if errorlevel 1 goto restart',
+      'xcopy "$extractDir\\*" "$appDir" /E /Y /I /Q >nul',
+      ':restart',
+      'start "" "$exePath"',
+      'endlocal',
+    ];
+    await script.writeAsString(lines.join('\r\n'));
+    await Process.start(
+      'cmd.exe',
+      <String>['/c', script.path],
+      mode: ProcessStartMode.detached,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    exit(0);
   }
 
   static String _normalize(String raw) {

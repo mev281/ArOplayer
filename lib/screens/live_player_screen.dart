@@ -14,9 +14,11 @@ import '../models/media_item.dart';
 import '../services/epg_service.dart';
 import '../services/l10n.dart';
 import '../services/m3u_parser.dart';
+import '../services/library_prefs.dart';
 import '../services/player_tuning.dart';
 import '../services/remote_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/settings_extras.dart';
 import '../widgets/track_picker.dart';
 
 const String _kAllChannelsLabel = 'All channels';
@@ -110,7 +112,24 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
   List<MediaItem> _searchResults = <MediaItem>[];
   List<MediaItem> _activeList = <MediaItem>[];
 
-  List<MediaItem> get _channels => widget.data.live;
+  List<MediaItem> _channelsCache = <MediaItem>[];
+
+  List<MediaItem> get _channels => _channelsCache;
+
+  String _rawGroup(MediaItem item) {
+    final value = item.subCategory.trim();
+    return value.isEmpty ? 'Genel' : value;
+  }
+
+  void _rebuildChannels() {
+    final prefs = LibraryPrefs.instance;
+    _channelsCache = widget.data.live.where((item) {
+      final group = _rawGroup(item);
+      if (prefs.isHidden(group)) return false;
+      if (prefs.isLocked(group) && !prefs.isUnlocked(group)) return false;
+      return true;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -129,6 +148,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _completedSub = _player.stream.completed.listen(_onCompleted);
     _playingSub = _player.stream.playing.listen(_onPlaying);
     _positionSub = _player.stream.position.listen(_onPosition);
+    _rebuildChannels();
     _buildIndex();
     _refreshFavorites();
     _refreshRecent();
@@ -260,7 +280,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   void _startBufferWatch() {
     _bufferWatchTimer?.cancel();
-    _bufferWatchTimer = Timer(const Duration(seconds: 12), () {
+    _bufferWatchTimer = Timer(const Duration(seconds: 3), () {
       _bufferWatchTimer = null;
       if (!mounted) return;
       _scheduleReconnect();
@@ -287,7 +307,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     _bufferWatchTimer?.cancel();
     _bufferWatchTimer = null;
     _reconnectAttempt += 1;
-    final delay = Duration(seconds: math.min(2 * _reconnectAttempt, 10));
+    const delay = Duration(seconds: 3);
     setState(() {
       _reconnecting = true;
       _buffering = false;
@@ -360,7 +380,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
   void _buildIndex() {
     _byGroup.clear();
-    for (final item in _channels) {
+    final prefs = LibraryPrefs.instance;
+    for (final item in widget.data.live) {
+      if (prefs.isHidden(_rawGroup(item))) continue;
       _byGroup.putIfAbsent(_groupOf(item), () => <MediaItem>[]).add(item);
     }
     _groupList = _byGroup.keys.toList();
@@ -655,7 +677,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     return !_handleBack();
   }
 
-  void _selectGroup(String? group) {
+  Future<void> _selectGroup(String? group) async {
+    final prefs = LibraryPrefs.instance;
+    if (group != null && prefs.isLocked(group) && !prefs.isUnlocked(group)) {
+      final ok = await askPin(context, t('PIN doğrulama'));
+      if (!ok || !mounted) return;
+      prefs.unlockForSession(group);
+      _rebuildChannels();
+    }
     final list = group == null
         ? _channels
         : (_byGroup[group] ?? const <MediaItem>[]);
@@ -1424,8 +1453,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           title: name,
           leading: _numberedLead(
             position + 1,
-            const Icon(
-              Icons.format_list_bulleted,
+            Icon(
+              LibraryPrefs.instance.isLocked(name) &&
+                      !LibraryPrefs.instance.isUnlocked(name)
+                  ? Icons.lock_rounded
+                  : Icons.format_list_bulleted,
               size: 18,
               color: Colors.white,
             ),
