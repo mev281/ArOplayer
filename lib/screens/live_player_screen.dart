@@ -1523,6 +1523,21 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     if (items.isEmpty) {
       return _MenuEmpty(message: t('Kanal bulunamadı.'));
     }
+        void step(int index, int delta) {
+      final target = index + delta;
+      if (target < 0 || target >= items.length) return;
+      final node = _nodeFor('$prefix-${items[target].id}');
+      node.requestFocus();
+      final ctx = node.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 120),
+        );
+      }
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: items.length,
@@ -1548,6 +1563,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
           },
           onLeft: _menuLeft,
           onRight: _menuRight,
+                 onUp: () => step(index, -1),
+       onDown: () => step(index, 1),
+
           onFocus: () {
             _selectedKey = key;
           },
