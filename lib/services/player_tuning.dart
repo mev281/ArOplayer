@@ -10,12 +10,12 @@ Future<void> tunePlayer(Player player, {required bool live}) async {
   final dynamic platform = player.platform;
   if (platform == null) return;
   if (live) {
+    await _setProperty(platform, 'hwdec', 'auto-safe');
     await _setProperty(platform, 'cache-secs', '15');
     await _setProperty(platform, 'network-timeout', '15');
     await _setProperty(platform, 'demuxer-readahead-secs', '15');
     await _setProperty(platform, 'demuxer-max-back-bytes', '5242880');
     await _setProperty(platform, 'demuxer-max-bytes', '16777216');
-    await _setProperty(platform, 'network-timeout', '15');
     await _setProperty(platform, 'cache-pause-initial', 'no');
     await _setProperty(platform, 'cache-pause-wait', '1');
     return;
