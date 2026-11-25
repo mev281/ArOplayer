@@ -1519,11 +1519,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
     );
   }
 
-  Widget _buildChannelList(List<MediaItem> items, String prefix) {
+    Widget _buildChannelList(List<MediaItem> items, String prefix) {
     if (items.isEmpty) {
-      return _MenuEmpty(message: t('Kanal bulunamadı.'));
+      return _MenuEmpty(message: T('Kanal bulunamadı.'));
     }
-        void step(int index, int delta) {
+    void step(int index, int delta) {
       final target = index + delta;
       if (target < 0 || target >= items.length) return;
       final node = _nodeFor('$prefix-${items[target].id}');
@@ -1538,42 +1538,56 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       }
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final channel = items[index];
-        final current = _current;
-        final playing = current != null && current.id == channel.id;
-        final key = '$prefix-${channel.id}';
-        return _MenuRow(
-          node: _nodeFor(key),
-          title: channel.name,
-          subtitle: _subtitleOf(channel),
-          leading: _numberedLead(index + 1, _ChannelLogo(channel: channel)),
-          playing: playing,
-          trailing: _StarButton(
-            active: StorageService.instance.isFavorite(channel),
-            onTap: () {
-              StorageService.instance.toggleFavorite(channel);
-            },
-          ),
-          onTap: () {
-            _onChannelTap(channel);
-          },
-          onLeft: _menuLeft,
-          onRight: _menuRight,
-                 onUp: () => step(index, -1),
-       onDown: () => step(index, 1),
-
-          onFocus: () {
-            _selectedKey = key;
-          },
-        );
-      },
+    return FocusTraversalGroup(
+      policy: OrderedTraversalPolicy(),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: <Widget>[
+            for (var index = 0; index < items.length; index++)
+              FocusTraversalOrder(
+                order: NumericFocusOrder(index.toDouble()),
+                child: Builder(
+                  builder: (context) {
+                    final channel = items[index];
+                    final current = _current;
+                    final playing = current != null && current.id == channel.id;
+                    final key = '$prefix-${channel.id}';
+                    return _MenuRow(
+                      node: _nodeFor(key),
+                      title: channel.name,
+                      subtitle: _subtitleOf(channel),
+                      leading: _numberedLead(
+                        index + 1,
+                        _ChannelLogo(channel: channel),
+                      ),
+                      playing: playing,
+                      trailing: _StarButton(
+                        active: StorageService.instance.isFavorite(channel),
+                        onTap: () {
+                          StorageService.instance.toggleFavorite(channel);
+                        },
+                      ),
+                      onTap: () {
+                        _onChannelTap(channel);
+                      },
+                      onLeft: _menuLeft,
+                      onUp: () => step(index, -1),
+                      onDown: () => step(index, 1),
+                      onRight: _menuRight,
+                      onFocus: () {
+                        _selectedKey = key;
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
-}
+
 
 class _MenuRow extends StatefulWidget {
   const _MenuRow({
