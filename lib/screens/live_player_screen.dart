@@ -1521,7 +1521,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
 
     Widget _buildChannelList(List<MediaItem> items, String prefix) {
     if (items.isEmpty) {
-      return _MenuEmpty(message: T('Kanal bulunamadı.'));
+      return _MenuEmpty(message: t('Kanal bulunamadı.'));
     }
     void step(int index, int delta) {
       final target = index + delta;
