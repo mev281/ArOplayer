@@ -12,6 +12,7 @@ import '../services/l10n.dart';
 import '../services/player_tuning.dart';
 import '../services/remote_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/desktop_helpers.dart';
 import '../widgets/track_picker.dart';
 
 class VodPlayerScreen extends StatefulWidget {
@@ -236,6 +237,10 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.f11) {
+      DesktopWindow.toggleFullscreen();
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowUp) {
       _audioFocus.requestFocus();
       return KeyEventResult.handled;
@@ -303,7 +308,13 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
         child: Stack(
           children: <Widget>[
             Positioned.fill(
-              child: _buildVideo(),
+              child: AutoHideCursor(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onDoubleTap: DesktopWindow.toggleFullscreen,
+                  child: _buildVideo(),
+                ),
+              ),
             ),
             Positioned(
               top: 0,

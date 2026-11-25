@@ -18,6 +18,7 @@ import '../services/library_prefs.dart';
 import '../services/player_tuning.dart';
 import '../services/remote_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/desktop_helpers.dart';
 import '../widgets/settings_extras.dart';
 import '../widgets/track_picker.dart';
 
@@ -781,6 +782,10 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       Navigator.of(context).maybePop();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.f11) {
+      DesktopWindow.toggleFullscreen();
+      return KeyEventResult.handled;
+    }
     if (!_fullscreen) return KeyEventResult.ignored;
     if (_menuOpen) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.arrowLeft ||
@@ -788,12 +793,15 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       _openMenu();
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.channelUp) {
       _stepChannel(-1);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown ||
-        key == LogicalKeyboardKey.pageDown) {
+        key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.channelDown) {
       _stepChannel(1);
       return KeyEventResult.handled;
     }
@@ -963,7 +971,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            _buildVideo(),
+            AutoHideCursor(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTap: _fullscreen ? null : DesktopWindow.toggleFullscreen,
+                child: _buildVideo(),
+              ),
+            ),
             if (_buffering && !_reconnecting)
               const Center(
                 child: SizedBox(
@@ -1233,7 +1247,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.78),
+            color: Colors.black.withOpacity(0.62),
             border: const Border(
               right: BorderSide(color: kNeonBorder),
             ),

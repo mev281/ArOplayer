@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../main.dart';
 import '../services/l10n.dart';
+import '../services/qr_setup_server.dart';
 import '../services/storage_service.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -22,6 +26,7 @@ class _SetupScreenState extends State<SetupScreen> {
   SourceType _type = SourceType.m3u;
   bool _hideAdult = false;
   bool _saving = false;
+  StreamSubscription<QrSetupSubmission>? _qrSub;
 
   @override
   void initState() {
@@ -41,6 +46,8 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   void dispose() {
+    _qrSub?.cancel();
+    QrSetupServer.instance.stop();
     _m3uController.dispose();
     _hostController.dispose();
     _userController.dispose();
@@ -53,6 +60,69 @@ class _SetupScreenState extends State<SetupScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _startQr() async {
+    final url = await QrSetupServer.instance.start();
+    await _qrSub?.cancel();
+    _qrSub = QrSetupServer.instance.submissions.listen(_onQrSubmission);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: kNeonSurfaceHigh,
+        title: Text(t('Telefondan ekle')),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(8),
+                child: QrImageView(data: url, size: 200),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                url,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t('Telefonunuzun tarayıcısında bu QR kodu okutun. Aynı Wi-Fi ağında olmalısınız.'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(t('Kapat')),
+          ),
+        ],
+      ),
+    );
+    await _qrSub?.cancel();
+    _qrSub = null;
+    await QrSetupServer.instance.stop();
+  }
+
+  void _onQrSubmission(QrSetupSubmission data) {
+    if (!mounted) return;
+    setState(() {
+      _type = data.type == 'xtream' ? SourceType.xtream : SourceType.m3u;
+      _m3uController.text = data.m3uUrl;
+      _hostController.text = data.host;
+      _userController.text = data.username;
+      _passController.text = data.password;
+    });
+    if (data.epgUrl.isNotEmpty) {
+      StorageService.instance.setEpgUrl(data.epgUrl);
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    _save();
   }
 
   Future<void> _save() async {
@@ -280,6 +350,14 @@ class _SetupScreenState extends State<SetupScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 8),
+                        _FocusFrame(
+                          child: OutlinedButton.icon(
+                            onPressed: _startQr,
+                            icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                            label: Text(t('Telefondan QR ile ekle')),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         ...fields,

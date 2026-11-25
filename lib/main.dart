@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'services/l10n.dart';
 import 'services/library_prefs.dart';
+import 'widgets/desktop_helpers.dart';
 import 'services/m3u_parser.dart';
 import 'services/remote_service.dart';
 import 'services/storage_service.dart';
@@ -38,6 +39,7 @@ Future<void> main() async {
       return const ColoredBox(color: kNeonBackground);
     };
     MediaKit.ensureInitialized();
+    await DesktopWindow.init();
     await StorageService.instance.init();
     await LibraryPrefs.instance.init();
     PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024;

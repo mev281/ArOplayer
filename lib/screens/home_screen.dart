@@ -429,6 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHome() {
     final storage = StorageService.instance;
     final continueList = storage.continueWatching();
+    final recentChannels = storage.recentChannels;
     final favoriteChannels = storage.favorites
         .where((item) => item.type == MediaType.live)
         .toList();
@@ -450,6 +451,45 @@ class _HomeScreenState extends State<HomeScreen> {
           t('Kaldığın yerden devam et, favori kanallarına hızlıca geç.'),
           style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
         ),
+        const SizedBox(height: 28),
+        _SectionHeader(
+          title: t('Son İzlenen Kanallar'),
+          icon: Icons.history_rounded,
+          trailing: recentChannels.isEmpty
+              ? null
+              : t('{n} kanal').replaceAll('{n}', '${recentChannels.length}'),
+        ),
+        const SizedBox(height: 12),
+        if (recentChannels.isEmpty)
+          _EmptyStrip(
+            icon: Icons.history_rounded,
+            message: t('Canlı kanal izledikçe burada görünecek.'),
+          )
+        else
+          SizedBox(
+            height: 168,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: recentChannels.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 14),
+              itemBuilder: (context, index) {
+                final channel = recentChannels[index];
+                return _ChannelCard(
+                  channel: channel,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (context) => LivePlayerScreen(
+                          data: widget.data,
+                          initialChannel: channel,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
         const SizedBox(height: 28),
         _SectionHeader(
           title: t('İzlemeye Devam Et'),
