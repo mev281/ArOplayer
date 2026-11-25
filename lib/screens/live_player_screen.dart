@@ -1587,6 +1587,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
       ),
     );
   }
+  }
 
 
 class _MenuRow extends StatefulWidget {
