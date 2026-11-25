@@ -1,10 +1,10 @@
 name: aroplayer
 description: ArOplayer - IPTV ve medya oynatici
 publish_to: 'none'
-version:1.1.4+15
+version: 1.1.4+15
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
   flutter:
