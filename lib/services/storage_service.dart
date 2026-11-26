@@ -28,7 +28,6 @@ class StorageService {
   static const String _keyLanguage = 'language';
   static const String _keyAutoPlayLast = 'auto_play_last';
   static const String _keyLastChannelId = 'last_channel_id';
-  static const String _keyEpgUrl = 'epg_url';
   static const String _cacheFileName = 'playlist_cache.m3u';
 
   final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -118,8 +117,6 @@ class StorageService {
     await _deleteCache();
     changes.value = changes.value + 1;
   }
-
-  Future<void> clearPlaylistCache() => _deleteCache();
 
   Future<void> _deleteCache() async {
     try {
@@ -420,15 +417,6 @@ class StorageService {
     final prefs = _store;
     if (prefs == null) return;
     await prefs.setString(_keyLastChannelId, id);
-    changes.value = changes.value + 1;
-  }
-
-  String get epgUrl => _store?.getString(_keyEpgUrl) ?? '';
-
-  Future<void> setEpgUrl(String value) async {
-    final prefs = _store;
-    if (prefs == null) return;
-    await prefs.setString(_keyEpgUrl, value.trim());
     changes.value = changes.value + 1;
   }
 }

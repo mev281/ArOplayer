@@ -579,7 +579,7 @@ PlaylistData parseM3u(String text) {
 
     final classified = _classifyLive(group, name, tvgId);
     final country = classified.country;
-    final subCategory = group.isEmpty ? 'Genel' : group;
+    final subCategory = classified.subCategory;
     live.add(MediaItem(
       id: id,
       name: name,

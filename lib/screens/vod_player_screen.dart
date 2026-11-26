@@ -10,9 +10,7 @@ import '../main.dart';
 import '../models/media_item.dart';
 import '../services/l10n.dart';
 import '../services/player_tuning.dart';
-import '../services/remote_service.dart';
 import '../services/storage_service.dart';
-import '../widgets/desktop_helpers.dart';
 import '../widgets/track_picker.dart';
 
 class VodPlayerScreen extends StatefulWidget {
@@ -64,8 +62,6 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
       ),
     );
     _controller = VideoController(_player);
-    RemoteService.instance.registerPlayer(_player);
-    RemoteService.instance.setWatching(widget.item.name);
     unawaited(tunePlayer(_player, live: false));
     unawaited(_enableWakelock());
     _positionSub = _player.stream.position.listen((value) {
@@ -120,8 +116,6 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
     _subtitleFocus.dispose();
     _fitFocus.dispose();
     _codecFocus.dispose();
-    RemoteService.instance.unregisterPlayer(_player);
-    RemoteService.instance.setIdle();
     _player.dispose();
     super.dispose();
   }
@@ -237,10 +231,6 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.f11) {
-      DesktopWindow.toggleFullscreen();
-      return KeyEventResult.handled;
-    }
     if (key == LogicalKeyboardKey.arrowUp) {
       _audioFocus.requestFocus();
       return KeyEventResult.handled;
@@ -308,13 +298,7 @@ class _VodPlayerScreenState extends State<VodPlayerScreen> {
         child: Stack(
           children: <Widget>[
             Positioned.fill(
-              child: AutoHideCursor(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onDoubleTap: DesktopWindow.toggleFullscreen,
-                  child: _buildVideo(),
-                ),
-              ),
+              child: _buildVideo(),
             ),
             Positioned(
               top: 0,

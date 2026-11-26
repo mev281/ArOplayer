@@ -28,9 +28,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   double _progress = 0;
   String? _error;
 
-  bool get _canInstall =>
-      (Platform.isAndroid && widget.info.apkUrl.isNotEmpty) ||
-      (Platform.isWindows && widget.info.zipUrl.isNotEmpty);
+  bool get _canInstall => Platform.isAndroid && widget.info.apkUrl.isNotEmpty;
 
   String get _notes {
     final raw = widget.info.notes.trim();

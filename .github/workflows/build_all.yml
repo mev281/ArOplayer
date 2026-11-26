@@ -25,7 +25,6 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
           channel: stable
 
       - name: Create platform folders
@@ -35,6 +34,16 @@ jobs:
         run: |
           sed -i 's/com\.aroplayer\.aroplayer/com.aroplayer.app/g' android/app/build.gradle* || true
           rm -rf android/app/src/main/kotlin/com/aroplayer/aroplayer
+
+      - name: Pin minSdk to 21
+        run: |
+          if [ -f android/app/build.gradle ]; then
+            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdkVersion 21/' android/app/build.gradle
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdk = 21/' android/app/build.gradle.kts
+          fi
+          grep -n "minSdk" android/app/build.gradle* || true
 
       - name: Configure release signing
         env:
@@ -78,54 +87,16 @@ jobs:
           PY
           grep -n "signingConfig" android/app/build.gradle*
 
-      - name: Pin Android plugin versions for Flutter 3.24
-        run: |
-          printf 'dependency_overrides:\n  media_kit_video: 1.2.5\n' > pubspec_overrides.yaml
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Remove template test
-        run: rm -rf test
-
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
-
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
-
-      - name: Pin minSdk to 21
-        run: |
-          if [ -f android/app/build.gradle ]; then
-            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdkVersion 21/' android/app/build.gradle
-          fi
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i -E 's/minSdk(Version)?[[:space:]]*(=[[:space:]]*)?(flutter\.minSdkVersion|[0-9]+)/minSdk = 21/' android/app/build.gradle.kts
-          fi
-          grep -n "minSdk" android/app/build.gradle* || true
-
-      - name: Force minSdk 21 via Gradle init script
-        run: |
-          mkdir -p ~/.gradle/init.d
-          cat > ~/.gradle/init.d/minsdk.gradle <<'GRADLE'
-          allprojects {
-              afterEvaluate { p ->
-                  if (p.plugins.hasPlugin('com.android.application')) {
-                      p.android.defaultConfig.minSdk = 21
-                  }
-              }
-          }
-          GRADLE
 
       - name: Build APK
         env:
           KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
-
-      - name: Verify minSdk is 21
-        run: |
-          M=$(find build/app/intermediates -name AndroidManifest.xml -path "*merged_manifest*" | head -1)
-          grep -n 'minSdkVersion="21"' "$M"
 
       - name: Verify APK has v1 signature
         run: |

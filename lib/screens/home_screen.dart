@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,13 +5,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../main.dart';
 import '../models/media_item.dart';
-import '../services/epg_service.dart';
-import '../services/library_prefs.dart';
 import '../services/l10n.dart';
-import '../services/m3u_parser.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
-import '../widgets/settings_extras.dart';
 import '../widgets/update_dialog.dart';
 import 'live_player_screen.dart';
 import 'multi_view_screen.dart';
@@ -278,29 +273,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final scale = (media.size.height / 720).clamp(0.72, 1.0).toDouble();
     return WillPopScope(
       onWillPop: _handleBack,
-      child: MediaQuery(
-        data: media.copyWith(textScaler: TextScaler.linear(scale)),
-        child: Scaffold(
-          backgroundColor: kNeonBackground,
-          body: SafeArea(
-            child: Row(
-              children: <Widget>[
-                _buildSidebar(),
-                Expanded(
-                  child: Focus(
-                    focusNode: _contentFocusNode,
-                    child: Container(
-                      color: kNeonBackground,
-                      child: _buildSection(),
-                    ),
+      child: Scaffold(
+        backgroundColor: kNeonBackground,
+        body: SafeArea(
+          child: Row(
+            children: <Widget>[
+              _buildSidebar(),
+              Expanded(
+                child: Focus(
+                  focusNode: _contentFocusNode,
+                  child: Container(
+                    color: kNeonBackground,
+                    child: _buildSection(),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -310,15 +300,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSidebar() {
     final entries = _menuEntries();
     return Container(
-      width: MediaQuery.of(context).size.width < 900 ? 200 : 240,
+      width: 240,
       decoration: const BoxDecoration(
         color: kNeonSurface,
         border: Border(
           right: BorderSide(color: kNeonBorder),
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
@@ -351,30 +340,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              children: <Widget>[
-                for (var index = 0; index < entries.length; index++)
-                  _SidebarItem(
-                    label: entries[index].label,
-                    icon: entries[index].icon,
-                    selected: _section == index,
-                    focusNode: _menuNodes[index],
-                    onSelect: () {
-                      _selectMenu(index);
-                    },
-                    onUp: () {
-                      _focusMenu(index - 1);
-                    },
-                    onDown: () {
-                      _focusMenu(index + 1);
-                    },
-                    onRight: () {
-                      _contentFocusNode.requestFocus();
-                    },
-                  ),
-              ],
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                return _SidebarItem(
+                  label: entry.label,
+                  icon: entry.icon,
+                  selected: _section == index,
+                  focusNode: _menuNodes[index],
+                  onSelect: () {
+                    _selectMenu(index);
+                  },
+                  onUp: () {
+                    _focusMenu(index - 1);
+                  },
+                  onDown: () {
+                    _focusMenu(index + 1);
+                  },
+                  onRight: () {
+                    _contentFocusNode.requestFocus();
+                  },
+                );
+              },
             ),
           ),
           const Divider(height: 1),
@@ -388,7 +378,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
-        ),
       ),
     );
   }
@@ -429,7 +418,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHome() {
     final storage = StorageService.instance;
     final continueList = storage.continueWatching();
-    final recentChannels = storage.recentChannels;
     final favoriteChannels = storage.favorites
         .where((item) => item.type == MediaType.live)
         .toList();
@@ -451,45 +439,6 @@ class _HomeScreenState extends State<HomeScreen> {
           t('Kaldığın yerden devam et, favori kanallarına hızlıca geç.'),
           style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A9B)),
         ),
-        const SizedBox(height: 28),
-        _SectionHeader(
-          title: t('Son İzlenen Kanallar'),
-          icon: Icons.history_rounded,
-          trailing: recentChannels.isEmpty
-              ? null
-              : t('{n} kanal').replaceAll('{n}', '${recentChannels.length}'),
-        ),
-        const SizedBox(height: 12),
-        if (recentChannels.isEmpty)
-          _EmptyStrip(
-            icon: Icons.history_rounded,
-            message: t('Canlı kanal izledikçe burada görünecek.'),
-          )
-        else
-          SizedBox(
-            height: 168,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: recentChannels.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 14),
-              itemBuilder: (context, index) {
-                final channel = recentChannels[index];
-                return _ChannelCard(
-                  channel: channel,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (context) => LivePlayerScreen(
-                          data: widget.data,
-                          initialChannel: channel,
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
         const SizedBox(height: 28),
         _SectionHeader(
           title: t('İzlemeye Devam Et'),
@@ -870,24 +819,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsCard(
-          title: t('Listelerim'),
-          subtitle: t('M3U ve EPG listelerini adlandırıp kaydedin, tek tıkla geçin.'),
-          child: const ListManagerBody(),
-        ),
-        const SizedBox(height: 14),
-        _SettingsCard(
-          title: t('Kategori gizleme ve kilit'),
-          subtitle: t('İstenmeyen kategorileri gizleyin veya PIN ile kilitleyin.'),
-          child: CategoryManagerBody(categories: _liveCategories()),
-        ),
-        const SizedBox(height: 14),
-        _SettingsCard(
-          title: 'EPG',
-          subtitle: t('Boş bırakılırsa M3U içindeki url-tvg adresi kullanılır.'),
-          child: const _EpgUrlField(),
-        ),
-        const SizedBox(height: 14),
-        _SettingsCard(
           title: t('Dil'),
           subtitle: t('Arayüz dilini seçin.'),
           child: Wrap(
@@ -947,18 +878,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
-  }
-
-  List<String> _liveCategories() {
-    final seen = <String>{};
-    final list = <String>[];
-    for (final item in widget.data.live) {
-      final value = item.subCategory.trim().isEmpty
-          ? 'Genel'
-          : item.subCategory.trim();
-      if (seen.add(value)) list.add(value);
-    }
-    return list;
   }
 
   Future<void> _changeSource() async {
@@ -1982,58 +1901,6 @@ class _ResultRowState extends State<_ResultRow> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _EpgUrlField extends StatefulWidget {
-  const _EpgUrlField();
-
-  @override
-  State<_EpgUrlField> createState() => _EpgUrlFieldState();
-}
-
-class _EpgUrlFieldState extends State<_EpgUrlField> {
-  late final TextEditingController _controller =
-      TextEditingController(text: StorageService.instance.epgUrl);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    await StorageService.instance.setEpgUrl(_controller.text);
-    unawaited(EpgService.instance.reload(M3uService.lastEpgUrls));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t('EPG adresi kaydedildi.'))),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            keyboardType: TextInputType.url,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: 'https://.../epg.xml',
-              isDense: true,
-            ),
-            onSubmitted: (_) => _save(),
-          ),
-        ),
-        const SizedBox(width: 10),
-        FilledButton(
-          onPressed: _save,
-          child: Text(t('Kaydet')),
-        ),
-      ],
     );
   }
 }
