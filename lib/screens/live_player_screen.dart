@@ -1040,7 +1040,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: kNeonSurface.withOpacity(0.82),
+                    color: Colors.black.withOpacity(0.55),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: kNeonBorder),
                   ),
@@ -1176,7 +1176,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen> {
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: kNeonSurface.withOpacity(0.78),
+            color: Colors.black.withOpacity(0.55),
             border: const Border(
               right: BorderSide(color: kNeonBorder),
             ),

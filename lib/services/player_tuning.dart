@@ -14,6 +14,7 @@ Future<void> _setProperty(dynamic platform, String key, String value) async {
 Future<void> tunePlayer(Player player, {required bool live}) async {
   final dynamic platform = player.platform;
   if (platform == null) return;
+  await _setProperty(platform, 'user-agent', 'Lavf/60.3.100');
   if (live) {
     await _setProperty(platform, 'cache-secs', '15');
     await _setProperty(platform, 'demuxer-readahead-secs', '15');

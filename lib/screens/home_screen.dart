@@ -347,8 +347,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final entries = _menuEntries();
     return Container(
       width: 240,
-      decoration: const BoxDecoration(
-        color: kNeonSurface,
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
         border: Border(
           right: BorderSide(color: kNeonBorder),
         ),

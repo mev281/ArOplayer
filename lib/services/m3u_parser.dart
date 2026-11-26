@@ -633,13 +633,24 @@ class M3uService {
   static List<String> lastEpgUrls = <String>[];
 
   static Future<String> fetch(String url) async {
-    final response = await http
-        .get(Uri.parse(url))
-        .timeout(const Duration(seconds: 60));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Liste indirilemedi (HTTP ${response.statusCode})');
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(url))
+        ..followRedirects = true
+        ..maxRedirects = 10
+        ..headers['User-Agent'] = 'VLC/3.0.18';
+      final streamed = await client
+          .send(request)
+          .timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamed)
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Liste indirilemedi (HTTP ${response.statusCode})');
+      }
+      return utf8.decode(response.bodyBytes, allowMalformed: true);
+    } finally {
+      client.close();
     }
-    return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
   static Future<PlaylistData> parse(String text) async {
