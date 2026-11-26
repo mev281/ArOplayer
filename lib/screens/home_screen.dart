@@ -133,8 +133,53 @@ class _HomeScreenState extends State<HomeScreen> {
     StorageService.instance.changes.addListener(_onStorageChanged);
     _loadVersion();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureInitialFocus();
       _startupTasks();
     });
+  }
+
+  /// Kumanda ilk acilista menudeki secili ogeye odaklanir; boylece Asagi tusu
+  /// listeyi sirayla gezer ve dogrudan en alttaki Ayarlar'a atlamaz.
+  void _ensureInitialFocus() {
+    if (!mounted) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final inMenu = _menuNodes.any((node) => node.hasFocus);
+    if (inMenu) return;
+    if (primary == null || primary is FocusScopeNode) {
+      _focusMenu(_section);
+    }
+  }
+
+  KeyEventResult _handleContentKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    // Sadece icerik alaninin kendisi (alt ogesi degil) odaktayken devreye girer.
+    if (FocusManager.instance.primaryFocus != _contentFocusNode) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowRight) {
+      final target = _firstContentChild();
+      if (target != null) {
+        target.requestFocus();
+      } else {
+        _focusMenu(_section);
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowLeft) {
+      _focusMenu(_section);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  FocusNode? _firstContentChild() {
+    for (final node in _contentFocusNode.traversalDescendants) {
+      if (node.canRequestFocus && node.context != null) return node;
+    }
+    return null;
   }
 
   @override
@@ -284,6 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Focus(
                   focusNode: _contentFocusNode,
+                  onKeyEvent: _handleContentKey,
                   child: Container(
                     color: kNeonBackground,
                     child: _buildSection(),
@@ -350,6 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: entry.label,
                   icon: entry.icon,
                   selected: _section == index,
+                  autofocus: index == _idxHome,
                   focusNode: _menuNodes[index],
                   onSelect: () {
                     _selectMenu(index);
@@ -1084,6 +1131,7 @@ class _SidebarItem extends StatefulWidget {
     required this.label,
     required this.icon,
     required this.selected,
+    this.autofocus = false,
     required this.focusNode,
     required this.onSelect,
     required this.onUp,
@@ -1094,6 +1142,7 @@ class _SidebarItem extends StatefulWidget {
   final String label;
   final IconData icon;
   final bool selected;
+  final bool autofocus;
   final FocusNode focusNode;
   final VoidCallback onSelect;
   final VoidCallback onUp;
@@ -1135,6 +1184,7 @@ class _SidebarItemState extends State<_SidebarItem> {
         : (_active ? Colors.white : const Color(0xFFB9B9C9));
     return Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _handleKey, child: FocusableActionDetector(
       focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
       onShowFocusHighlight: (value) {
         if (_focused == value) return;
         setState(() {

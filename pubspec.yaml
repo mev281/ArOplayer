@@ -1,7 +1,7 @@
 name: aroplayer
 description: ArOplayer - IPTV ve medya oynatici
 publish_to: 'none'
-version: 1.0.6+7
+version: 1.1.7+18
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
