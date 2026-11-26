@@ -359,6 +359,10 @@ const Map<String, Map<String, String>> kAppStrings = <String, Map<String, String
     'en': 'PIN (4 digits)',
     'de': 'PIN (4 Ziffern)',
   },
+  'PIN (4 hane, isteğe bağlı)': <String, String>{
+    'en': 'PIN (4 digits, optional)',
+    'de': 'PIN (4 Ziffern, optional)',
+  },
   'Kaydet ve Başla': <String, String>{
     'en': 'Save and Start',
     'de': 'Speichern und starten',
