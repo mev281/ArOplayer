@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - master
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
@@ -25,6 +27,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.24.5'
           channel: stable
 
       - name: Create platform folders
@@ -87,26 +90,63 @@ jobs:
           PY
           grep -n "signingConfig" android/app/build.gradle*
 
+      - name: Pin Android plugin versions for Flutter 3.24
+        run: |
+          printf 'dependency_overrides:\n  media_kit_video: 1.2.5\n' > pubspec_overrides.yaml
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
+      - name: Force minSdk 21 via Gradle init script
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/minsdk.gradle <<'GRADLE'
+          allprojects {
+              afterEvaluate { p ->
+                  if (p.plugins.hasPlugin('com.android.application')) {
+                      p.android.defaultConfig.minSdk = 21
+                  }
+              }
+          }
+          GRADLE
+          grep -n "minSdk" android/app/build.gradle* || true
+
       - name: Build APK
         env:
           KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
 
+      - name: Verify minSdk is 21
+        run: |
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt
+          $AAPT dump badging build/app/outputs/flutter-apk/app-release.apk | grep -E "^(package|sdkVersion|targetSdkVersion)"
+          $AAPT dump badging build/app/outputs/flutter-apk/app-release.apk | grep -q "^sdkVersion:'21'"
+
       - name: Verify APK has v1 signature
         run: |
           unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E "META-INF/[^/]+\.(RSA|DSA|EC)"
+
+      - name: Verify release keystore signature (v1+v2, not debug)
+        run: |
+          APKSIGNER=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)apksigner
+          OUT=$($APKSIGNER verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk)
+          echo "$OUT"
+          echo "$OUT" | grep -q "Verified using v1 scheme (JAR signing): true"
+          echo "$OUT" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
+          echo "$OUT" | grep -q "CN=ArOplayer"
+          if echo "$OUT" | grep -q "CN=Android Debug"; then echo "Debug key detected"; exit 1; fi
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk ArOplayer.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ArOplayer-FireTV-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ArOplayer.apk
           if-no-files-found: error
 
   build-windows:
@@ -149,3 +189,29 @@ jobs:
           name: ArOplayer-Windows-zip
           path: ArOplayer-Windows.zip
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files
+        run: ls -la dist && test -f dist/ArOplayer.apk && test -f dist/ArOplayer-Windows.zip
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ArOplayer ${{ github.ref_name }}
+          files: |
+            dist/ArOplayer.apk
+            dist/ArOplayer-Windows.zip
